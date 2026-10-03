@@ -97,16 +97,6 @@ Save frequently used text templates (signatures, addresses, code snippets) with 
 
 ---
 
-## 📸 Installer Preview
-
-<div align="center">
-  <img src="docs/assets/dmg-preview.png" width="720" alt="ClipBoardUltra DMG Installer" />
-  <br />
-  <em>The release installer provides a pixel-perfect, HiDPI Retina drag-and-drop experience.</em>
-</div>
-
----
-
 ## 🚀 Installation
 
 ### Option 1: Direct Download (Recommended)
