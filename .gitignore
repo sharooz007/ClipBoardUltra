@@ -18,6 +18,7 @@ project.xcworkspace/xcuserdata/
 # Application and Installer outputs
 *.app/
 *.dmg
+*.dmg.sha256
 *.pkg
 
 # Local signing & keychains

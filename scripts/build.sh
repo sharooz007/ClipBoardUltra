@@ -52,15 +52,39 @@ fi
 # ---------------------------------------------------------------------------
 # Compile
 # ---------------------------------------------------------------------------
-echo "==> Compiling..."
 SOURCES=()
 while IFS= read -r f; do SOURCES+=("$f"); done < <(find Sources/ClipBoardUltra -name '*.swift' | sort)
 
-swiftc -O \
-    -sdk "$SDK_PATH" \
-    -target "$ARCH-apple-macos13.0" \
-    "${SOURCES[@]}" \
-    -o "build/$APP_NAME"
+BUILD_UNIVERSAL="${BUILD_UNIVERSAL:-1}"
+
+if [ "$BUILD_UNIVERSAL" = "1" ]; then
+    echo "==> Compiling Universal 2 binary (Apple Silicon arm64 + Intel x86_64)..."
+    echo "    --> Compiling arm64 slice..."
+    swiftc -O \
+        -sdk "$SDK_PATH" \
+        -target "arm64-apple-macos13.0" \
+        "${SOURCES[@]}" \
+        -o "build/${APP_NAME}_arm64"
+
+    echo "    --> Compiling x86_64 (Intel) slice..."
+    swiftc -O \
+        -sdk "$SDK_PATH" \
+        -target "x86_64-apple-macos13.0" \
+        "${SOURCES[@]}" \
+        -o "build/${APP_NAME}_x86_64"
+
+    echo "    --> Merging slices with lipo..."
+    lipo -create "build/${APP_NAME}_arm64" "build/${APP_NAME}_x86_64" -output "build/$APP_NAME"
+    echo "    --> Mach-O architectures:"
+    file "build/$APP_NAME"
+else
+    echo "==> Compiling native ($ARCH)..."
+    swiftc -O \
+        -sdk "$SDK_PATH" \
+        -target "$ARCH-apple-macos13.0" \
+        "${SOURCES[@]}" \
+        -o "build/$APP_NAME"
+fi
 
 # ---------------------------------------------------------------------------
 # Bundle

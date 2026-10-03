@@ -5,7 +5,7 @@ PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$PROJECT_DIR"
 
 APP_NAME="ClipBoardUltra"
-DMG_NAME="ClipBoardUltra.dmg"
+DMG_NAME="${1:-ClipBoardUltra.dmg}"
 VOL_NAME="ClipBoardUltra"
 STAGING_DIR="build/dmg_staging"
 FINAL_DMG="$PROJECT_DIR/$DMG_NAME"

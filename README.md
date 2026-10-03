@@ -111,7 +111,9 @@ Save frequently used text templates (signatures, addresses, code snippets) with 
 
 ### Option 1: Direct Download (Recommended)
 
-1. Download the latest **`ClipBoardUltra.dmg`** from [**Releases**](https://github.com/sharooz007/ClipBoardUltra/releases).
+1. Download the latest installer from [**Releases**](https://github.com/sharooz007/ClipBoardUltra/releases):
+   - **`ClipBoardUltra.dmg`** — **Universal 2** installer (Recommended: runs natively on **both Apple Silicon & Intel Macs**).
+   - **`ClipBoardUltra-Intel-x86_64.dmg`** — Dedicated package for **Intel Macs** (macOS 13+).
 2. Open the disk image and drag **ClipBoardUltra** into your **Applications** folder.
 3. Launch ClipBoardUltra.
 

@@ -36,12 +36,15 @@ jobs:
         run: |
           chmod +x scripts/build.sh scripts/create_dmg.sh
           NO_LAUNCH=1 ./scripts/build.sh
-          ./scripts/create_dmg.sh
+          ./scripts/create_dmg.sh ClipBoardUltra.dmg
+          ./scripts/create_dmg.sh ClipBoardUltra-Intel-x86_64.dmg
 
       - name: Generate Checksum
         run: |
           shasum -a 256 ClipBoardUltra.dmg > ClipBoardUltra.dmg.sha256
+          shasum -a 256 ClipBoardUltra-Intel-x86_64.dmg > ClipBoardUltra-Intel-x86_64.dmg.sha256
           cat ClipBoardUltra.dmg.sha256
+          cat ClipBoardUltra-Intel-x86_64.dmg.sha256
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -49,6 +52,8 @@ jobs:
           files: |
             ClipBoardUltra.dmg
             ClipBoardUltra.dmg.sha256
+            ClipBoardUltra-Intel-x86_64.dmg
+            ClipBoardUltra-Intel-x86_64.dmg.sha256
           generate_release_notes: true
           draft: false
           prerelease: false
