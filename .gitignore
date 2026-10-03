@@ -1,0 +1,37 @@
+# macOS system files
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+
+# Xcode & SwiftPM
+build/
+.build/
+.swiftpm/
+DerivedData/
+*.xcuserstate
+project.xcworkspace/xcuserdata/
+*.xcuserdatad/
+
+# Application and Installer outputs
+*.app/
+*.dmg
+*.pkg
+
+# Local signing & keychains
+*.keychain*
+*.p12
+*.pem
+
+# Editor artifacts
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+
+# Temporary files
+/tmp/
+*.tmp

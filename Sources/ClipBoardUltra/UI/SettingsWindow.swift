@@ -1,0 +1,849 @@
+import Cocoa
+import SwiftUI
+import Carbon
+import UniformTypeIdentifiers
+
+// MARK: - Window
+
+public enum SettingsTab: String, CaseIterable, Identifiable {
+    case general = "General"
+    case history = "History"
+    case paste = "Paste"
+    case privacy = "Privacy"
+    case snippets = "Snippets"
+
+    public var id: String { rawValue }
+    var icon: String {
+        switch self {
+        case .general: return "gearshape"
+        case .history: return "clock.arrow.circlepath"
+        case .paste: return "doc.on.clipboard"
+        case .privacy: return "hand.raised"
+        case .snippets: return "bookmark"
+        }
+    }
+}
+
+/// Shared navigation state so other parts of the app can open a specific tab/snippet.
+final class SettingsNavigation: ObservableObject {
+    @Published var tab: SettingsTab = .general
+    @Published var selectedSnippetId: UUID?
+}
+
+public final class SettingsWindowController: NSObject, NSWindowDelegate {
+    public static let shared = SettingsWindowController()
+    private var window: NSWindow?
+    let navigation = SettingsNavigation()
+
+    public func show(tab: SettingsTab? = nil, selectSnippet: UUID? = nil) {
+        if let tab { navigation.tab = tab }
+        if let selectSnippet { navigation.selectedSnippetId = selectSnippet }
+
+        if window == nil {
+            let w = NSWindow(
+                contentRect: NSRect(x: 0, y: 0, width: 760, height: 560),
+                styleMask: [.titled, .closable, .miniaturizable, .fullSizeContentView],
+                backing: .buffered, defer: false
+            )
+            w.title = "ClipBoardUltra Settings"
+            w.titlebarAppearsTransparent = true
+            w.titleVisibility = .hidden
+            w.isMovableByWindowBackground = true
+            w.appearance = NSAppearance(named: .darkAqua)
+            w.backgroundColor = NSColor(Theme.chassis)
+            w.isReleasedWhenClosed = false
+            w.delegate = self
+            w.contentView = NSHostingView(rootView: SettingsView(navigation: navigation))
+            w.center()
+            window = w
+        }
+        NSApp.activate(ignoringOtherApps: true)
+        window?.makeKeyAndOrderFront(nil)
+    }
+}
+
+// MARK: - Root view
+
+struct SettingsView: View {
+    @ObservedObject var navigation: SettingsNavigation
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 10) {
+                LogoMark(size: 22)
+                Text("Settings")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(Theme.bone)
+                Spacer()
+                HStack(spacing: 7) {
+                    ForEach(SettingsTab.allCases) { tab in
+                        Button {
+                            navigation.tab = tab
+                        } label: {
+                            Label(tab.rawValue, systemImage: tab.icon)
+                        }
+                        .buttonStyle(KeycapStyle(tone: .graphite, lit: navigation.tab == tab, compact: true))
+                        .accessibilityAddTraits(navigation.tab == tab ? .isSelected : [])
+                    }
+                }
+            }
+            .padding(.leading, 80)   // clear the traffic-light buttons
+            .padding(.trailing, 18)
+            .padding(.top, 14)
+            .padding(.bottom, 14)
+
+            Rectangle().fill(Color.black.opacity(0.5)).frame(height: 1)
+
+            Group {
+                switch navigation.tab {
+                case .general: GeneralPane()
+                case .history: HistoryPane()
+                case .paste: PastePane()
+                case .privacy: PrivacyPane()
+                case .snippets: SnippetsPane(navigation: navigation)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .frame(minWidth: 760, minHeight: 560)
+        .background(
+            LinearGradient(colors: [Theme.chassisTop, Theme.chassis], startPoint: .top, endPoint: .bottom)
+                .ignoresSafeArea()
+        )
+        .tint(Theme.orange)
+    }
+}
+
+// MARK: - Building blocks
+
+/// A titled group of rows on a recessed panel.
+struct SettingsSection<Content: View>: View {
+    let title: String
+    var footnote: String?
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title.uppercased())
+                .font(Theme.mono(10, .semibold))
+                .foregroundColor(Theme.amber.opacity(0.85))
+                .padding(.leading, 2)
+            VStack(spacing: 0) { content }
+                .background(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(Theme.screen)
+                        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(Color.black.opacity(0.7), lineWidth: 1))
+                )
+            if let footnote {
+                Text(footnote)
+                    .font(.system(size: 11))
+                    .foregroundColor(Theme.boneDim)
+                    .padding(.leading, 2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+}
+
+/// Label + optional explanation on the left, control on the right.
+struct SettingsRow<Control: View>: View {
+    let title: String
+    var detail: String?
+    var showDivider = true
+    @ViewBuilder var control: Control
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(alignment: .center, spacing: 16) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.system(size: 13))
+                        .foregroundColor(Theme.bone)
+                    if let detail {
+                        Text(detail)
+                            .font(.system(size: 11))
+                            .foregroundColor(Theme.boneDim)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                Spacer(minLength: 12)
+                control
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            if showDivider {
+                Rectangle().fill(Theme.hairline).frame(height: 1).padding(.leading, 14)
+            }
+        }
+    }
+}
+
+/// Lets offscreen snapshot tools lay panes out without a ScrollView (ImageRenderer can't draw one).
+struct StaticLayoutKey: EnvironmentKey { static let defaultValue = false }
+extension EnvironmentValues {
+    var staticLayout: Bool {
+        get { self[StaticLayoutKey.self] }
+        set { self[StaticLayoutKey.self] = newValue }
+    }
+}
+
+struct PaneScroll<Content: View>: View {
+    @Environment(\.staticLayout) private var staticLayout
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        if staticLayout {
+            inner.frame(maxHeight: .infinity, alignment: .top)
+        } else {
+            ScrollView { inner }
+        }
+    }
+
+    private var inner: some View {
+        VStack(alignment: .leading, spacing: 22) { content }
+            .padding(.horizontal, 24)
+            .padding(.vertical, 20)
+            .frame(maxWidth: 640, alignment: .leading)
+            .frame(maxWidth: .infinity)
+    }
+}
+
+private extension View {
+    func settingsPicker(width: CGFloat = 220) -> some View {
+        self.pickerStyle(.menu).labelsHidden().frame(width: width)
+    }
+    func settingsSwitch() -> some View {
+        self.toggleStyle(.switch).labelsHidden().controlSize(.small)
+    }
+}
+
+// MARK: - General
+
+struct GeneralPane: View {
+    @ObservedObject private var settings = SettingsStore.shared
+    @ObservedObject private var paste = PasteEngine.shared
+    @State private var launchAtLogin = LoginItemManager.shared.isEnabled
+
+    var body: some View {
+        PaneScroll {
+            SettingsSection(title: "Shortcut") {
+                SettingsRow(title: "Open clipboard history",
+                            detail: "Works in every app. Click the key, then press the new combination.",
+                            showDivider: false) {
+                    ShortcutRecorder()
+                }
+            }
+
+            SettingsSection(title: "Startup & placement") {
+                SettingsRow(title: "Open at login") {
+                    Toggle("", isOn: $launchAtLogin)
+                        .settingsSwitch()
+                        .onChange(of: launchAtLogin) { on in
+                            if !LoginItemManager.shared.setEnabled(on) {
+                                launchAtLogin = LoginItemManager.shared.isEnabled
+                            }
+                            UserDefaults.standard.set(true, forKey: "didConfigureLoginItem")
+                        }
+                }
+                SettingsRow(title: "Open the overlay on") {
+                    Picker("", selection: $settings.overlayPlacement) {
+                        ForEach(SettingsStore.OverlayPlacement.allCases) { Text($0.label).tag($0) }
+                    }
+                    .settingsPicker(width: 250)
+                }
+                SettingsRow(title: "Show icon in the menu bar",
+                            detail: "When hidden, open ClipBoardUltra from Finder or Spotlight to get back to Settings.",
+                            showDivider: false) {
+                    Toggle("", isOn: $settings.showMenuBarIcon).settingsSwitch()
+                }
+            }
+
+            SettingsSection(title: "Auto-paste") {
+                SettingsRow(title: paste.isAccessibilityGranted ? "Auto-paste is on" : "Auto-paste is off",
+                            detail: paste.isAccessibilityGranted
+                                ? "ClipBoardUltra can type ⌘V into the app you were using."
+                                : "Allow ClipBoardUltra in Privacy & Security › Accessibility. Until then, Return copies and you press ⌘V.",
+                            showDivider: false) {
+                    if paste.isAccessibilityGranted {
+                        HStack(spacing: 6) {
+                            Circle().fill(Theme.amber).frame(width: 7, height: 7)
+                            Text("ON").font(Theme.mono(11, .bold)).foregroundColor(Theme.amber)
+                        }
+                    } else {
+                        Button("Grant Access") { paste.requestAccessibilityPermission() }
+                            .buttonStyle(KeycapStyle(tone: .orange, compact: true))
+                    }
+                }
+            }
+
+            Text("ClipBoardUltra \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "") · history stays on this Mac")
+                .font(Theme.mono(10))
+                .foregroundColor(Theme.boneDim.opacity(0.8))
+        }
+        .onAppear { launchAtLogin = LoginItemManager.shared.isEnabled }
+    }
+}
+
+/// Click, then press a key combination. Esc cancels.
+struct ShortcutRecorder: View {
+    @ObservedObject private var settings = SettingsStore.shared
+    @State private var recording = false
+    @State private var monitor: Any?
+    @State private var message: String?
+
+    var body: some View {
+        VStack(alignment: .trailing, spacing: 4) {
+            HStack(spacing: 8) {
+                Button {
+                    recording ? stop(restore: true) : start()
+                } label: {
+                    Text(recording ? "Press keys…  esc cancels" : settings.hotkeyDisplay)
+                        .font(recording ? .system(size: 11.5, weight: .semibold) : Theme.mono(13, .bold))
+                        .frame(minWidth: 90)
+                }
+                .buttonStyle(KeycapStyle(tone: recording ? .orange : .bone))
+                .accessibilityLabel("Shortcut \(settings.hotkeyDisplay). Click to change.")
+
+                if settings.hotkeyKeyCode != UInt32(kVK_ANSI_V) || settings.hotkeyModifiers != UInt32(cmdKey | optionKey) {
+                    Button("Reset") { apply(keyCode: UInt32(kVK_ANSI_V), modifiers: UInt32(cmdKey | optionKey)) }
+                        .buttonStyle(KeycapStyle(tone: .graphite, compact: true))
+                }
+            }
+            if let message {
+                Text(message)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(Theme.orange)
+            }
+        }
+        .onDisappear { if recording { stop(restore: true) } }
+    }
+
+    private func start() {
+        message = nil
+        recording = true
+        HotkeyManager.shared.unregisterHotkey()   // so the current combo can be re-recorded
+        monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            if event.keyCode == UInt16(kVK_Escape) {
+                stop(restore: true)
+                return nil
+            }
+            let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            let mods = HotkeyFormatter.carbonModifiers(from: flags)
+            let needsModifier = mods & UInt32(cmdKey | optionKey | controlKey) == 0
+            let isFunctionKey = (kVK_F1...kVK_F12).contains(Int(event.keyCode))
+            if needsModifier && !isFunctionKey {
+                message = "Include ⌘, ⌥ or ⌃ in the shortcut."
+                NSSound.beep()
+                return nil
+            }
+            if mods == UInt32(cmdKey) && !isFunctionKey {
+                message = "⌘ + a key belongs to apps (⌘V, ⌘C…). Add ⌥ or ⌃."
+                NSSound.beep()
+                return nil
+            }
+            apply(keyCode: UInt32(event.keyCode), modifiers: mods)
+            stop(restore: false)
+            return nil
+        }
+    }
+
+    private func apply(keyCode: UInt32, modifiers: UInt32) {
+        let status = HotkeyManager.shared.register(keyCode: keyCode, modifiers: modifiers)
+        if status == noErr {
+            settings.hotkeyKeyCode = keyCode
+            settings.hotkeyModifiers = modifiers
+            message = nil
+        } else {
+            message = "\(HotkeyFormatter.string(keyCode: keyCode, modifiers: modifiers)) is already used by another app."
+            HotkeyManager.shared.registerDefaultHotkey()
+        }
+    }
+
+    private func stop(restore: Bool) {
+        if let monitor { NSEvent.removeMonitor(monitor) }
+        monitor = nil
+        recording = false
+        if restore { HotkeyManager.shared.registerDefaultHotkey() }
+    }
+}
+
+// MARK: - History
+
+struct HistoryPane: View {
+    @ObservedObject private var settings = SettingsStore.shared
+    @ObservedObject private var clipboard = ClipboardManager.shared
+    @State private var diskUsage: Int64 = 0
+    @State private var confirmClear = false
+
+    var body: some View {
+        PaneScroll {
+            SettingsSection(title: "Limits", footnote: "Pinned clips are never removed by these limits.") {
+                SettingsRow(title: "Keep up to") {
+                    Picker("", selection: $settings.maxItems) {
+                        ForEach(SettingsStore.historyLimits, id: \.self) { Text("\($0) clips").tag($0) }
+                    }
+                    .settingsPicker(width: 140)
+                }
+                SettingsRow(title: "Keep clips for", showDivider: false) {
+                    Picker("", selection: $settings.retention) {
+                        ForEach(SettingsStore.Retention.allCases) { Text($0.label).tag($0) }
+                    }
+                    .settingsPicker(width: 140)
+                }
+            }
+
+            SettingsSection(title: "What to save") {
+                SettingsRow(title: "Text and code") { Toggle("", isOn: $settings.captureText).settingsSwitch() }
+                SettingsRow(title: "Images") { Toggle("", isOn: $settings.captureImages).settingsSwitch() }
+                SettingsRow(title: "Skip images larger than") {
+                    Picker("", selection: $settings.maxImageMB) {
+                        ForEach(SettingsStore.imageLimitsMB, id: \.self) { Text($0 == 0 ? "No limit" : "\($0) MB").tag($0) }
+                    }
+                    .settingsPicker(width: 140)
+                    .disabled(!settings.captureImages)
+                }
+                SettingsRow(title: "Files copied in Finder") { Toggle("", isOn: $settings.captureFiles).settingsSwitch() }
+                SettingsRow(title: "New screenshots", showDivider: false) {
+                    Toggle("", isOn: $settings.captureScreenshots).settingsSwitch()
+                }
+            }
+
+            SettingsSection(title: "Screenshot folder") {
+                SettingsRow(title: settings.customScreenshotFolder == nil ? "Automatic" : "Custom folder",
+                            detail: (ScreenshotManager.shared.screenshotDirectoryURL.path as NSString).abbreviatingWithTildeInPath,
+                            showDivider: false) {
+                    HStack(spacing: 6) {
+                        if settings.customScreenshotFolder != nil {
+                            Button("Use Automatic") { settings.customScreenshotFolder = nil }
+                                .buttonStyle(KeycapStyle(tone: .graphite, compact: true))
+                        }
+                        Button("Choose…", action: chooseFolder)
+                            .buttonStyle(KeycapStyle(tone: .graphite, compact: true))
+                    }
+                }
+            }
+
+            SettingsSection(title: "Storage") {
+                SettingsRow(title: "\(clipboard.items.count) clips · \(ByteCountFormatter.string(fromByteCount: diskUsage, countStyle: .file)) on disk",
+                            detail: "Stored in ~/Library/Application Support/ClipBoardUltra",
+                            showDivider: false) {
+                    Button(confirmClear ? "Clear unpinned?" : "Clear History") {
+                        if confirmClear {
+                            clipboard.clearAllUnpinned()
+                            confirmClear = false
+                            refreshUsage()
+                        } else {
+                            confirmClear = true
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 3) { confirmClear = false }
+                        }
+                    }
+                    .buttonStyle(KeycapStyle(tone: confirmClear ? .orange : .graphite, compact: true))
+                }
+            }
+        }
+        .onAppear(perform: refreshUsage)
+        .onChange(of: clipboard.items.count) { _ in refreshUsage() }
+    }
+
+    private func refreshUsage() {
+        DispatchQueue.global(qos: .utility).async {
+            let bytes = StorageManager.shared.diskUsageBytes()
+            DispatchQueue.main.async { diskUsage = bytes }
+        }
+    }
+
+    private func chooseFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Use Folder"
+        panel.directoryURL = ScreenshotManager.shared.screenshotDirectoryURL
+        if panel.runModal() == .OK, let url = panel.url {
+            settings.customScreenshotFolder = url.path
+        }
+    }
+}
+
+// MARK: - Paste
+
+struct PastePane: View {
+    @ObservedObject private var settings = SettingsStore.shared
+
+    var body: some View {
+        PaneScroll {
+            SettingsSection(title: "Return key") {
+                SettingsRow(title: "When I press Return",
+                            detail: "⌘↩ always does the other one.",
+                            showDivider: false) {
+                    Picker("", selection: $settings.returnAction) {
+                        ForEach(SettingsStore.ReturnAction.allCases) { Text($0.label).tag($0) }
+                    }
+                    .settingsPicker(width: 230)
+                }
+            }
+
+            SettingsSection(title: "Formatting") {
+                SettingsRow(title: "Paste as plain text by default",
+                            detail: settings.pastePlainTextByDefault
+                                ? "Fonts, colors and links are removed. ⇧↩ keeps the original formatting."
+                                : "Text keeps its original formatting when it has any. ⇧↩ pastes plain text.") {
+                    Toggle("", isOn: $settings.pastePlainTextByDefault).settingsSwitch()
+                }
+                SettingsRow(title: "Trim spaces and blank lines",
+                            detail: "Removes whitespace at the start and end of text clips when pasting.",
+                            showDivider: false) {
+                    Toggle("", isOn: $settings.trimWhitespace).settingsSwitch()
+                }
+            }
+
+            SettingsSection(title: "List") {
+                SettingsRow(title: "Move a clip to the top after using it") {
+                    Toggle("", isOn: $settings.promoteOnUse).settingsSwitch()
+                }
+                SettingsRow(title: "Show ⌘1–⌘9 keys on the first nine clips",
+                            detail: "The shortcuts work either way.",
+                            showDivider: false) {
+                    Toggle("", isOn: $settings.showQuickIndexBadges).settingsSwitch()
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Privacy
+
+struct PrivacyPane: View {
+    @ObservedObject private var settings = SettingsStore.shared
+
+    var body: some View {
+        PaneScroll {
+            SettingsSection(title: "Recording") {
+                SettingsRow(title: settings.isPaused ? (settings.pauseDescription ?? "Paused") : "Recording new copies",
+                            detail: settings.isPaused ? "Nothing you copy is saved until recording resumes." : "Pause while you handle something sensitive.",
+                            showDivider: false) {
+                    if settings.isPaused {
+                        Button("Resume") { settings.resume() }
+                            .buttonStyle(KeycapStyle(tone: .orange, compact: true))
+                    } else {
+                        HStack(spacing: 6) {
+                            Button("5 min") { settings.pause(for: 300) }
+                            Button("1 hour") { settings.pause(for: 3600) }
+                            Button("Until resumed") { settings.pause(for: nil) }
+                        }
+                        .buttonStyle(KeycapStyle(tone: .graphite, compact: true))
+                    }
+                }
+            }
+
+            SettingsSection(title: "Sensitive content",
+                            footnote: "Copies that password managers mark as secret are always skipped.") {
+                SettingsRow(title: "Skip passwords and API keys",
+                            detail: "Ignores single words that look random (Tr0ub4dor&3), keys like sk-… or ghp_…, tokens and private keys.",
+                            showDivider: false) {
+                    Toggle("", isOn: $settings.ignoreSecrets).settingsSwitch()
+                }
+            }
+
+            SettingsSection(title: "Ignored apps", footnote: "Nothing copied while one of these apps is in front is saved.") {
+                if settings.ignoredApps.isEmpty {
+                    SettingsRow(title: "No ignored apps", showDivider: false) { EmptyView() }
+                }
+                ForEach(Array(settings.ignoredApps.enumerated()), id: \.element) { index, bundleID in
+                    IgnoredAppRow(bundleID: bundleID, isLast: index == settings.ignoredApps.count - 1) {
+                        settings.ignoredApps.removeAll { $0 == bundleID }
+                    }
+                }
+            }
+
+            HStack {
+                Spacer()
+                Button {
+                    addApp()
+                } label: {
+                    Label("Add App…", systemImage: "plus")
+                }
+                .buttonStyle(KeycapStyle(tone: .graphite, compact: true))
+            }
+        }
+    }
+
+    private func addApp() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.application]
+        panel.directoryURL = URL(fileURLWithPath: "/Applications")
+        panel.allowsMultipleSelection = true
+        panel.prompt = "Ignore"
+        guard panel.runModal() == .OK else { return }
+        for url in panel.urls {
+            if let id = Bundle(url: url)?.bundleIdentifier, !settings.ignoredApps.contains(id) {
+                settings.ignoredApps.append(id)
+            }
+        }
+    }
+}
+
+struct IgnoredAppRow: View {
+    let bundleID: String
+    let isLast: Bool
+    let onRemove: () -> Void
+
+    private var appURL: URL? { NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) }
+
+    private static let knownNames: [String: String] = [
+        "com.1password.1password": "1Password",
+        "com.agilebits.onepassword7": "1Password 7",
+        "com.bitwarden.desktop": "Bitwarden",
+        "com.apple.keychainaccess": "Keychain Access",
+        "com.apple.Passwords": "Passwords"
+    ]
+
+    private var displayName: String {
+        if let url = appURL {
+            return FileManager.default.displayName(atPath: url.path).replacingOccurrences(of: ".app", with: "")
+        }
+        return Self.knownNames[bundleID] ?? bundleID
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 10) {
+                if let url = appURL {
+                    Image(nsImage: NSWorkspace.shared.icon(forFile: url.path))
+                        .resizable().frame(width: 22, height: 22)
+                } else {
+                    Image(systemName: "app.dashed").frame(width: 22, height: 22).foregroundColor(Theme.boneDim)
+                }
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(displayName)
+                        .font(.system(size: 13))
+                        .foregroundColor(Theme.bone)
+                    Text(appURL == nil ? "Not installed · \(bundleID)" : bundleID)
+                        .font(Theme.mono(10))
+                        .foregroundColor(Theme.boneDim)
+                }
+                Spacer()
+                Button(action: onRemove) {
+                    Image(systemName: "minus.circle")
+                        .font(.system(size: 13))
+                        .foregroundColor(Theme.boneDim)
+                        .frame(width: 24, height: 24)
+                }
+                .buttonStyle(.plain)
+                .help("Stop ignoring")
+                .accessibilityLabel("Stop ignoring \(bundleID)")
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            if !isLast { Rectangle().fill(Theme.hairline).frame(height: 1).padding(.leading, 46) }
+        }
+    }
+}
+
+// MARK: - Snippets
+
+struct SnippetsPane: View {
+    @ObservedObject var navigation: SettingsNavigation
+    @ObservedObject private var manager = SnippetManager.shared
+
+    var body: some View {
+        HStack(spacing: 0) {
+            // List
+            VStack(spacing: 0) {
+                ScrollView {
+                    LazyVStack(spacing: 2) {
+                        if manager.snippets.isEmpty {
+                            Text("Your snippets print here")
+                                .font(.system(size: 11.5))
+                                .foregroundColor(Theme.inkFaded)
+                                .padding(.top, 24)
+                        }
+                        ForEach(manager.sorted) { snippet in
+                            let selected = navigation.selectedSnippetId == snippet.id
+                            Button {
+                                navigation.selectedSnippetId = snippet.id
+                            } label: {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(snippet.name.isEmpty ? "Untitled snippet" : snippet.name)
+                                        .font(.system(size: 12.5, weight: .medium))
+                                        .foregroundColor(selected ? Theme.paper : Theme.ink)
+                                        .lineLimit(1)
+                                    Text(snippet.keyword.isEmpty ? "\(snippet.useCount)× used" : "\(snippet.keyword) · \(snippet.useCount)× used")
+                                        .font(Theme.mono(9.5))
+                                        .foregroundColor(selected ? Theme.paper.opacity(0.7) : Theme.inkFaded)
+                                        .lineLimit(1)
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 7)
+                                .background(RoundedRectangle(cornerRadius: 4).fill(selected ? Theme.ink : Color.clear))
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            Perforation().padding(.horizontal, 8)
+                        }
+                    }
+                    .padding(6)
+                }
+                .background(Theme.paper)
+                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+
+                Button {
+                    let s = manager.add(name: "New snippet", content: "")
+                    navigation.selectedSnippetId = s.id
+                } label: {
+                    Label("New Snippet", systemImage: "plus")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(KeycapStyle(tone: .graphite, compact: true))
+                .padding(.top, 10)
+            }
+            .frame(width: 220)
+            .padding(.leading, 20)
+            .padding(.vertical, 18)
+
+            // Editor
+            Group {
+                if let id = navigation.selectedSnippetId, let snippet = manager.snippet(id: id) {
+                    SnippetEditor(snippet: snippet, onDelete: {
+                        manager.delete(id: id)
+                        navigation.selectedSnippetId = manager.sorted.first?.id
+                    })
+                    .id(id)
+                } else {
+                    VStack(spacing: 8) {
+                        Text(manager.snippets.isEmpty ? "No snippets yet" : "Select a snippet")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(Theme.bone)
+                        Text("Snippets are text you reuse: signatures, addresses, replies, code.\nCreate one here, or select a text clip in the overlay and press ⌘S.")
+                            .font(.system(size: 11.5))
+                            .foregroundColor(Theme.boneDim)
+                            .multilineTextAlignment(.center)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+            }
+            .padding(20)
+        }
+        .onAppear {
+            if navigation.selectedSnippetId == nil { navigation.selectedSnippetId = manager.sorted.first?.id }
+        }
+    }
+}
+
+struct SnippetEditor: View {
+    @State private var draft: Snippet
+    @State private var confirmDelete = false
+    let onDelete: () -> Void
+
+    init(snippet: Snippet, onDelete: @escaping () -> Void) {
+        _draft = State(initialValue: snippet)
+        self.onDelete = onDelete
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                field("Name", text: $draft.name, placeholder: "Email signature")
+                field("Keyword", text: $draft.keyword, placeholder: "sig", width: 130)
+            }
+
+            VStack(alignment: .leading, spacing: 5) {
+                Text("CONTENT").font(Theme.mono(9.5, .semibold)).foregroundColor(Theme.amber.opacity(0.85))
+                TextEditor(text: $draft.content)
+                    .font(Theme.mono(12))
+                    .foregroundColor(Theme.bone)
+                    .scrollContentBackground(.hidden)
+                    .padding(8)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(Theme.screen)
+                            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Color.black.opacity(0.7), lineWidth: 1))
+                    )
+                    .accessibilityLabel("Snippet content")
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("INSERT A PLACEHOLDER").font(Theme.mono(9.5, .semibold)).foregroundColor(Theme.amber.opacity(0.85))
+                FlowRow(spacing: 6) {
+                    ForEach(SnippetManager.placeholders, id: \.token) { p in
+                        Button(p.token) { draft.content += p.token }
+                            .buttonStyle(KeycapStyle(tone: .graphite, compact: true))
+                            .help(p.meaning)
+                    }
+                }
+            }
+
+            HStack {
+                Text("Saved automatically · used \(draft.useCount)×")
+                    .font(Theme.mono(10))
+                    .foregroundColor(Theme.boneDim)
+                Spacer()
+                Button(confirmDelete ? "Delete snippet?" : "Delete") {
+                    if confirmDelete { onDelete() } else {
+                        confirmDelete = true
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { confirmDelete = false }
+                    }
+                }
+                .buttonStyle(KeycapStyle(tone: confirmDelete ? .orange : .graphite, compact: true))
+            }
+        }
+        .onChange(of: draft) { SnippetManager.shared.update($0) }
+    }
+
+    private func field(_ label: String, text: Binding<String>, placeholder: String, width: CGFloat? = nil) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(label.uppercased()).font(Theme.mono(9.5, .semibold)).foregroundColor(Theme.amber.opacity(0.85))
+            TextField(placeholder, text: text)
+                .textFieldStyle(.plain)
+                .font(.system(size: 13))
+                .foregroundColor(Theme.bone)
+                .padding(.horizontal, 10)
+                .frame(height: 30)
+                .background(
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(Theme.screen)
+                        .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).stroke(Color.black.opacity(0.7), lineWidth: 1))
+                )
+                .accessibilityLabel(label)
+        }
+        .frame(width: width)
+    }
+}
+
+/// Minimal wrapping HStack for macOS 13 (no Layout-based FlowLayout needed elsewhere).
+struct FlowRow: Layout {
+    var spacing: CGFloat = 6
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let maxWidth = proposal.width ?? .infinity
+        var x: CGFloat = 0, y: CGFloat = 0, rowHeight: CGFloat = 0, widest: CGFloat = 0
+        for view in subviews {
+            let size = view.sizeThatFits(.unspecified)
+            if x > 0 && x + size.width > maxWidth {
+                y += rowHeight + spacing
+                x = 0
+                rowHeight = 0
+            }
+            x += size.width + spacing
+            rowHeight = max(rowHeight, size.height)
+            widest = max(widest, x - spacing)
+        }
+        return CGSize(width: min(widest, maxWidth), height: y + rowHeight)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var x = bounds.minX, y = bounds.minY, rowHeight: CGFloat = 0
+        for view in subviews {
+            let size = view.sizeThatFits(.unspecified)
+            if x > bounds.minX && x + size.width > bounds.maxX {
+                y += rowHeight + spacing
+                x = bounds.minX
+                rowHeight = 0
+            }
+            view.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
+            x += size.width + spacing
+            rowHeight = max(rowHeight, size.height)
+        }
+    }
+}
