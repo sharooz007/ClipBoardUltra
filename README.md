@@ -52,6 +52,14 @@ Every Mac power user has experienced this frustration:
 > **No rushing before thumbnails disappear. No cluttered Desktop file hunting. No Finder drag-and-drop.**  
 > Even if you captured multiple screenshots over the past hour, press <kbd>→</kbd> or <kbd>Tab</kbd> to jump straight into the **Screenshots** category to preview and paste any past screenshot instantly.
 
+<br />
+
+<div align="center">
+  <img src="docs/assets/screenshots-preview.png" width="820" alt="ClipBoardUltra Screenshot Auto-Capture & Direct Paste" />
+  <br />
+  <em>Auto-caught screenshots ready for instant inspection and pasting with <kbd>↩ Return</kbd>.</em>
+</div>
+
 ---
 
 ## ✨ Features
