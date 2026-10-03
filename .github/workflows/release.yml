@@ -5,10 +5,15 @@ on:
     tags:
       - 'v*'
 
+permissions:
+  contents: write
+
 jobs:
   release:
     name: Build & Publish Release
     runs-on: macos-14
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout Code
