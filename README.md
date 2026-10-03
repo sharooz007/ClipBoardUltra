@@ -30,10 +30,27 @@ Most clipboard managers require taking your hands off the keyboard, clicking thr
 
 **ClipBoardUltra** is designed from the ground up as a native macOS instrument:
 - **Instant Auto-Paste**: Simulates native keystrokes directly into your active editor, browser, or terminal without window focus fighting.
+- **📸 Zero-Friction Screenshot Workflow**: Solves the notorious macOS disappearing-thumbnail problem. Screenshots are captured instantly in the background and can be pasted directly with <kbd>↩ Return</kbd>—no Finder searching required!
 - **Physical Keycap Aesthetic**: Inspired by tactile desk instruments and Teenage Engineering hardware—perforated paper roll slips, keycaps with mechanical travel, amber LED readouts, and a dedicated safety-orange paste key.
 - **100% Keyboard-Driven**: Seamlessly browse, filter, pin, format, and paste without ever touching your mouse.
 - **Zero Latency, Pure Swift**: Built purely in Swift and AppKit. Uses under 35 MB of RAM and zero background CPU.
 - **Privacy First**: 100% offline. Zero network calls, zero analytics. Secrets and passwords are automatically filtered out.
+
+---
+
+## 📸 The Problem: macOS's Disappearing Screenshot Thumbnail
+
+Every Mac power user has experienced this frustration:
+
+| The Default macOS Frustration ❌ | The ClipBoardUltra Solution ⚡ |
+| :--- | :--- |
+| **1.** You press <kbd>⌘</kbd><kbd>⇧</kbd><kbd>4</kbd> or <kbd>⌘</kbd><kbd>⇧</kbd><kbd>5</kbd> to grab a screenshot. | **1.** You capture your screenshot with any macOS shortcut. |
+| **2.** A tiny thumbnail floats in the bottom-right corner for **just 2–3 seconds**. | **2.** ClipBoardUltra's background watcher catches the screenshot **the exact millisecond it is created**. |
+| **3.** You switch windows or get distracted—**the thumbnail vanishes**. | **3.** Press <kbd>⌥</kbd><kbd>⌘</kbd><kbd>V</kbd> anywhere—your fresh capture is already at the very top. |
+| **4.** Now you must open **Finder**, click **Desktop** or screenshots folder, hunt down `Screenshot 2026-10-03 at 9.45.12 PM.png`, and manually drag or copy it. | **4.** Press <kbd>↩ Return</kbd>—it is **instantly pasted** directly into Slack, Figma, Discord, GitHub, Notion, or email! |
+
+> **No rushing before thumbnails disappear. No cluttered Desktop file hunting. No Finder drag-and-drop.**  
+> Even if you captured multiple screenshots over the past hour, press <kbd>→</kbd> or <kbd>Tab</kbd> to jump straight into the **Screenshots** category to preview and paste any past screenshot instantly.
 
 ---
 
@@ -54,8 +71,8 @@ Most clipboard managers require taking your hands off the keyboard, clicking thr
   - <kbd>⌘↩</kbd> Copy to pasteboard without auto-pasting.
 
 ### 🧠 Intelligent Content Engine
+- **📸 Automatic Screenshot Watcher & Instant Paste**: Watches your system screenshot folder (`com.apple.screencapture location` or Desktop) using native FSEvents. Whenever a screenshot is created, ClipBoardUltra ingests it in background. You can inspect its dimensions and timestamp in the right preview panel and paste the image data directly with <kbd>↩ Return</kbd>.
 - **Syntax Language Detection**: Automatically parses and tags copied code (Swift, Python, TypeScript, Go, Rust, Shell, JSON, SQL, HTML/CSS).
-- **Screenshot Auto-Watcher**: Monitors your macOS screenshot directory and surfaces new captures instantly in the overlay.
 - **Rich Text Preservation**: Keeps full RTF/HTML formatting intact alongside clean UTF-8 plain text.
 
 ### 📝 Dynamic Snippets
