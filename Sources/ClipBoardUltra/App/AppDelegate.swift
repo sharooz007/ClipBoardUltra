@@ -73,6 +73,10 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
                 OverlayPanelManager.shared.show()
             } else if lastLine == "hide" {
                 OverlayPanelManager.shared.hide()
+            } else if lastLine == "settings" {
+                SettingsWindowController.shared.show()
+            } else if lastLine == "about" {
+                SettingsWindowController.shared.show(tab: .about)
             } else {
                 OverlayPanelManager.shared.toggle()
             }

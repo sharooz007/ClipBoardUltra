@@ -159,26 +159,35 @@ struct KeyLegend: View {
 
 // MARK: - Logo mark
 
-/// The ClipBoardUltra mark: a slip of paper feeding out of a printer slot, torn edge at the bottom.
+/// The ClipBoardUltra mark: loads the app logo or draws the signature slip-slot mark.
 struct LogoMark: View {
     var size: CGFloat = 22
 
     var body: some View {
-        Canvas { ctx, canvas in
-            let s = canvas.width / 24
-            // Slot
-            let slot = Path(roundedRect: CGRect(x: 1.5 * s, y: 3 * s, width: 21 * s, height: 4 * s), cornerRadius: 2 * s)
-            ctx.fill(slot, with: .color(Theme.chassisLow))
-            ctx.stroke(slot, with: .color(Theme.boneDim.opacity(0.6)), lineWidth: 0.8 * s)
-            // Slip
-            ctx.fill(LogoGeometry.slip(scale: s), with: .color(Theme.paper))
-            // Orange key + ink lines on the slip
-            ctx.fill(Path(roundedRect: CGRect(x: 6.5 * s, y: 9 * s, width: 3 * s, height: 3 * s), cornerRadius: 0.8 * s), with: .color(Theme.orange))
-            ctx.fill(Path(roundedRect: CGRect(x: 11 * s, y: 9.8 * s, width: 6.5 * s, height: 1.5 * s), cornerRadius: 0.75 * s), with: .color(Theme.ink))
-            ctx.fill(Path(roundedRect: CGRect(x: 6.5 * s, y: 14 * s, width: 11 * s, height: 1.3 * s), cornerRadius: 0.65 * s), with: .color(Theme.inkFaded))
+        if let iconImage = NSImage(named: "AppIcon") ?? (Bundle.main.path(forResource: "Logo", ofType: "png").flatMap { NSImage(contentsOfFile: $0) }) {
+            Image(nsImage: iconImage)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(width: size, height: size)
+                .clipShape(RoundedRectangle(cornerRadius: size * 0.22, style: .continuous))
+                .accessibilityHidden(true)
+        } else {
+            Canvas { ctx, canvas in
+                let s = canvas.width / 24
+                // Slot
+                let slot = Path(roundedRect: CGRect(x: 1.5 * s, y: 3 * s, width: 21 * s, height: 4 * s), cornerRadius: 2 * s)
+                ctx.fill(slot, with: .color(Theme.chassisLow))
+                ctx.stroke(slot, with: .color(Theme.boneDim.opacity(0.6)), lineWidth: 0.8 * s)
+                // Slip
+                ctx.fill(LogoGeometry.slip(scale: s), with: .color(Theme.paper))
+                // Orange key + ink lines on the slip
+                ctx.fill(Path(roundedRect: CGRect(x: 6.5 * s, y: 9 * s, width: 3 * s, height: 3 * s), cornerRadius: 0.8 * s), with: .color(Theme.orange))
+                ctx.fill(Path(roundedRect: CGRect(x: 11 * s, y: 9.8 * s, width: 6.5 * s, height: 1.5 * s), cornerRadius: 0.75 * s), with: .color(Theme.ink))
+                ctx.fill(Path(roundedRect: CGRect(x: 6.5 * s, y: 14 * s, width: 11 * s, height: 1.3 * s), cornerRadius: 0.65 * s), with: .color(Theme.inkFaded))
+            }
+            .frame(width: size, height: size)
+            .accessibilityHidden(true)
         }
-        .frame(width: size, height: size)
-        .accessibilityHidden(true)
     }
 }
 

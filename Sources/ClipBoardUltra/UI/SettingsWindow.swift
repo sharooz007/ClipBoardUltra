@@ -11,6 +11,7 @@ public enum SettingsTab: String, CaseIterable, Identifiable {
     case paste = "Paste"
     case privacy = "Privacy"
     case snippets = "Snippets"
+    case about = "About"
 
     public var id: String { rawValue }
     var icon: String {
@@ -20,6 +21,7 @@ public enum SettingsTab: String, CaseIterable, Identifiable {
         case .paste: return "doc.on.clipboard"
         case .privacy: return "hand.raised"
         case .snippets: return "bookmark"
+        case .about: return "info.circle"
         }
     }
 }
@@ -101,6 +103,7 @@ struct SettingsView: View {
                 case .paste: PastePane()
                 case .privacy: PrivacyPane()
                 case .snippets: SnippetsPane(navigation: navigation)
+                case .about: AboutPane()
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -844,6 +847,123 @@ struct FlowRow: Layout {
             view.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
             x += size.width + spacing
             rowHeight = max(rowHeight, size.height)
+        }
+    }
+}
+
+// MARK: - About Pane
+
+struct AboutPane: View {
+    @Environment(\.openURL) var openURL
+
+    var appVersion: String {
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "2.0.0"
+        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "2"
+        return "Version \(version) (Build \(build))"
+    }
+
+    var body: some View {
+        ScrollView(.vertical, showsIndicators: true) {
+            VStack(alignment: .leading, spacing: 20) {
+                // Hero Header with new Logo
+                HStack(spacing: 18) {
+                    LogoMark(size: 72)
+                        .shadow(color: Color.black.opacity(0.4), radius: 8, x: 0, y: 4)
+
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text("ClipBoardUltra")
+                            .font(.system(size: 22, weight: .bold))
+                            .foregroundColor(Theme.bone)
+
+                        Text(appVersion)
+                            .font(Theme.mono(11, .medium))
+                            .foregroundColor(Theme.amber)
+
+                        Text("A tactile, ultra-fast, keyboard-driven native clipboard manager for macOS.")
+                            .font(.system(size: 12))
+                            .foregroundColor(Theme.boneDim)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .padding(.horizontal, 4)
+                .padding(.top, 4)
+
+                // Developer & Open Source Section
+                SettingsSection(title: "Developer & Open Source", footnote: "ClipBoardUltra is 100% free and open source.") {
+                    SettingsRow(title: "Developer", detail: "Sharooz — Creator & Lead Engineer") {
+                        Button {
+                            if let url = URL(string: "https://github.com/sharooz007") {
+                                openURL(url)
+                            }
+                        } label: {
+                            HStack(spacing: 5) {
+                                Image(systemName: "person.circle.fill")
+                                Text("GitHub Profile")
+                            }
+                        }
+                        .buttonStyle(KeycapStyle(tone: .bone, compact: true))
+                    }
+
+                    SettingsRow(title: "GitHub Repository", detail: "View source code, report issues, or star the project") {
+                        Button {
+                            if let url = URL(string: "https://github.com/sharooz007/ClipBoardUltra") {
+                                openURL(url)
+                            }
+                        } label: {
+                            HStack(spacing: 5) {
+                                Image(systemName: "link")
+                                Text("GitHub Page")
+                            }
+                        }
+                        .buttonStyle(KeycapStyle(tone: .orange, compact: true))
+                    }
+
+                    SettingsRow(title: "License", detail: "Open source under the permissive MIT License", showDivider: false) {
+                        Text("MIT")
+                            .font(Theme.mono(11, .semibold))
+                            .foregroundColor(Theme.bone)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(
+                                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                                    .fill(Theme.chassisLow)
+                            )
+                    }
+                }
+
+                // Architecture & Privacy
+                SettingsSection(title: "Architecture & Privacy", footnote: "No copied text, images, or snippets ever leave your computer.") {
+                    SettingsRow(title: "Network & Telemetry", detail: "100% On-Device · Zero Analytics · Zero External Calls") {
+                        HStack(spacing: 6) {
+                            Circle().fill(Color.green).frame(width: 8, height: 8)
+                            Text("Offline Only")
+                                .font(Theme.mono(11, .semibold))
+                                .foregroundColor(Theme.bone)
+                        }
+                    }
+
+                    SettingsRow(title: "Local Database", detail: "History and rich snippets stored in Application Support", showDivider: false) {
+                        Button {
+                            let path = ("~/Library/Application Support/ClipBoardUltra" as NSString).expandingTildeInPath
+                            NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: path)
+                        } label: {
+                            Text("Reveal in Finder")
+                        }
+                        .buttonStyle(KeycapStyle(tone: .graphite, compact: true))
+                    }
+                }
+
+                HStack {
+                    Spacer()
+                    Text("Crafted with care by Sharooz")
+                        .font(Theme.mono(11, .medium))
+                        .foregroundColor(Theme.boneDim.opacity(0.8))
+                    Spacer()
+                }
+                .padding(.top, 6)
+                .padding(.bottom, 12)
+            }
+            .padding(24)
         }
     }
 }

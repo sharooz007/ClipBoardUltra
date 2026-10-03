@@ -116,6 +116,10 @@ public final class StatusBarController: NSObject, NSMenuDelegate {
 
         menu.addItem(.separator())
 
+        let aboutItem = NSMenuItem(title: "About ClipBoardUltra…", action: #selector(openAbout), keyEquivalent: "")
+        aboutItem.target = self
+        menu.addItem(aboutItem)
+
         let settingsItem = NSMenuItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
         settingsItem.target = self
         menu.addItem(settingsItem)
@@ -138,6 +142,10 @@ public final class StatusBarController: NSObject, NSMenuDelegate {
 
     @objc private func openSnippets() {
         SettingsWindowController.shared.show(tab: .snippets)
+    }
+
+    @objc private func openAbout() {
+        SettingsWindowController.shared.show(tab: .about)
     }
 
     @objc private func openSettings() {

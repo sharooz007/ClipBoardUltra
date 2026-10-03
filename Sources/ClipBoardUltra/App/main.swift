@@ -6,8 +6,14 @@ setbuf(stderr, nil)
 
 let args = CommandLine.arguments
 
-if args.contains("--show") || args.contains("--hide") || args.contains("--toggle") {
-    let cmd = args.contains("--show") ? "show" : (args.contains("--hide") ? "hide" : "toggle")
+if args.contains("--show") || args.contains("--hide") || args.contains("--toggle") || args.contains("--settings") || args.contains("--about") {
+    let cmd: String
+    if args.contains("--show") { cmd = "show" }
+    else if args.contains("--hide") { cmd = "hide" }
+    else if args.contains("--settings") { cmd = "settings" }
+    else if args.contains("--about") { cmd = "about" }
+    else { cmd = "toggle" }
+
     let path = "/tmp/clipboardultra.cmd"
     if let fh = FileHandle(forWritingAtPath: path) {
         fh.seekToEndOfFile()
