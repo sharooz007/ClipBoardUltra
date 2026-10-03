@@ -14,8 +14,25 @@ INSTALL_PATH="/Applications/$APP_BUNDLE"
 # ---------------------------------------------------------------------------
 # SDK: prefer the SDK that matches the installed swiftc.
 # ---------------------------------------------------------------------------
-SDK_PATH="/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk"
-[ -d "$SDK_PATH" ] || SDK_PATH="$(xcrun --show-sdk-path)"
+find_valid_sdk() {
+    local candidates=()
+    local default_sdk
+    default_sdk="$(xcrun --sdk macosx --show-sdk-path 2>/dev/null || true)"
+    [ -n "$default_sdk" ] && candidates+=("$default_sdk")
+    [ -d "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk" ] && candidates+=("/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk")
+    for d in /Applications/Xcode*.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk; do
+        [ -d "$d" ] && candidates+=("$d")
+    done
+
+    for candidate in "${candidates[@]}"; do
+        if [ -d "$candidate" ] && echo "import Foundation" | swiftc -sdk "$candidate" - -o /dev/null >/dev/null 2>&1; then
+            echo "$candidate"
+            return 0
+        fi
+    done
+    xcrun --show-sdk-path
+}
+SDK_PATH="$(find_valid_sdk)"
 ARCH="$(uname -m)"
 echo "==> SDK: $SDK_PATH ($ARCH)"
 
