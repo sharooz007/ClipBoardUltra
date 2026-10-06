@@ -34,6 +34,14 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         HotkeyManager.shared.registerDefaultHotkey()
 
+        // Register the Drop Shelf hotkey (default ⌥⌘D) and start mouse shake monitor
+        HotkeyManager.shared.onDropShelfHotKeyPressed = {
+            print("[Hotkey] drop shelf triggered")
+            DropShelfManager.shared.toggle()
+        }
+        HotkeyManager.shared.registerDefaultDropShelfHotkey()
+        DragShakeMonitor.shared.start()
+
         // Start automatically at login (first launch only; user can turn it off in the menu)
         LoginItemManager.shared.enableOnFirstLaunch()
 
@@ -73,6 +81,16 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
                 OverlayPanelManager.shared.show()
             } else if lastLine == "hide" {
                 OverlayPanelManager.shared.hide()
+            } else if lastLine == "shelf" {
+                DropShelfManager.shared.toggle()
+            } else if lastLine.hasPrefix("shelf-add ") {
+                let filePath = String(lastLine.dropFirst("shelf-add ".count)).trimmingCharacters(in: .whitespacesAndNewlines)
+                let url = URL(fileURLWithPath: filePath)
+                DropShelfManager.shared.addFiles([url])
+            } else if lastLine == "shelf-clear" {
+                DropShelfManager.shared.clearAll()
+            } else if lastLine == "settings-shelf" {
+                SettingsWindowController.shared.show(tab: .dropShelf)
             } else if lastLine == "settings" {
                 SettingsWindowController.shared.show()
             } else if lastLine == "about" {

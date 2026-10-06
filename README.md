@@ -83,6 +83,14 @@ Every Mac power user has experienced this frustration:
 - **Syntax Language Detection**: Automatically parses and tags copied code (Swift, Python, TypeScript, Go, Rust, Shell, JSON, SQL, HTML/CSS).
 - **Rich Text Preservation**: Keeps full RTF/HTML formatting intact alongside clean UTF-8 plain text.
 
+### 🗂️ Quick Drop Shelf (Multi-Folder File Staging)
+Need to collect files from multiple different Finder folders and drop them into a single destination? No more opening multiple Finder windows side-by-side:
+- **Shake-to-Summon**: While dragging files in Finder, quickly shake your cursor back and forth—a floating drop target square pops up immediately near your cursor.
+- **Global Shortcut**: Press <kbd>⌥</kbd><kbd>⌘</kbd><kbd>D</kbd> or use the menu bar icon to summon or hide the shelf anytime.
+- **Multi-Folder Staging**: Drop files into the shelf, navigate to any other folders, and add more items. The shelf shows live file previews, icons, and item sizes.
+- **One-Motion Batch Drop**: Drag individual files or grab the safety-orange **"Drag All to Destination"** bar to move all staged files into your target folder or app at once.
+- **Auto-Dismiss**: The shelf automatically fades away as soon as all files are dragged out to their destination.
+
 ### 📝 Dynamic Snippets
 Save frequently used text templates (signatures, addresses, code snippets) with dynamic expansion macros:
 - `{date}`, `{time}`, `{datetime}`, `{weekday}`

@@ -59,6 +59,14 @@ public final class SettingsStore: ObservableObject {
     @Published public var overlayPlacement: OverlayPlacement { didSet { defaults.set(overlayPlacement.rawValue, forKey: "overlayPlacement") } }
     @Published public var showMenuBarIcon: Bool { didSet { defaults.set(showMenuBarIcon, forKey: "showMenuBarIcon") } }
 
+    // MARK: Drop Shelf
+
+    @Published public var dropShelfEnabled: Bool { didSet { defaults.set(dropShelfEnabled, forKey: "dropShelfEnabled") } }
+    @Published public var dropShelfShakeToSummon: Bool { didSet { defaults.set(dropShelfShakeToSummon, forKey: "dropShelfShakeToSummon"); DragShakeMonitor.shared.restartIfNeeded() } }
+    @Published public var dropShelfHotkeyKeyCode: UInt32 { didSet { defaults.set(Int(dropShelfHotkeyKeyCode), forKey: "dropShelfHotkeyKeyCode") } }
+    @Published public var dropShelfHotkeyModifiers: UInt32 { didSet { defaults.set(Int(dropShelfHotkeyModifiers), forKey: "dropShelfHotkeyModifiers") } }
+    @Published public var dropShelfAutoDismiss: Bool { didSet { defaults.set(dropShelfAutoDismiss, forKey: "dropShelfAutoDismiss") } }
+
     // MARK: History
 
     @Published public var maxItems: Int { didSet { defaults.set(maxItems, forKey: "maxItems") } }
@@ -111,11 +119,21 @@ public final class SettingsStore: ObservableObject {
                 "com.1password.1password", "com.agilebits.onepassword7", "com.bitwarden.desktop",
                 "com.apple.keychainaccess", "com.apple.Passwords"
             ],
-            "ignoreSecrets": true
+            "ignoreSecrets": true,
+            "dropShelfEnabled": true,
+            "dropShelfShakeToSummon": true,
+            "dropShelfHotkeyKeyCode": kVK_ANSI_D,
+            "dropShelfHotkeyModifiers": cmdKey | optionKey,
+            "dropShelfAutoDismiss": true
         ])
 
         hotkeyKeyCode = UInt32(defaults.integer(forKey: "hotkeyKeyCode"))
         hotkeyModifiers = UInt32(defaults.integer(forKey: "hotkeyModifiers"))
+        dropShelfEnabled = defaults.bool(forKey: "dropShelfEnabled")
+        dropShelfShakeToSummon = defaults.bool(forKey: "dropShelfShakeToSummon")
+        dropShelfHotkeyKeyCode = UInt32(defaults.integer(forKey: "dropShelfHotkeyKeyCode"))
+        dropShelfHotkeyModifiers = UInt32(defaults.integer(forKey: "dropShelfHotkeyModifiers"))
+        dropShelfAutoDismiss = defaults.bool(forKey: "dropShelfAutoDismiss")
         overlayPlacement = OverlayPlacement(rawValue: defaults.string(forKey: "overlayPlacement") ?? "") ?? .pointerScreen
         showMenuBarIcon = defaults.bool(forKey: "showMenuBarIcon")
         maxItems = defaults.integer(forKey: "maxItems")
@@ -182,6 +200,10 @@ public final class SettingsStore: ObservableObject {
 
     public var hotkeyDisplay: String {
         HotkeyFormatter.string(keyCode: hotkeyKeyCode, modifiers: hotkeyModifiers)
+    }
+
+    public var dropShelfHotkeyDisplay: String {
+        HotkeyFormatter.string(keyCode: dropShelfHotkeyKeyCode, modifiers: dropShelfHotkeyModifiers)
     }
 
     public func isIgnored(bundleID: String?) -> Bool {

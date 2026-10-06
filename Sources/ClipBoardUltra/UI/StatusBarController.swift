@@ -75,6 +75,11 @@ public final class StatusBarController: NSObject, NSMenuDelegate {
         snippetsItem.target = self
         menu.addItem(snippetsItem)
 
+        let shelfTitle = DropShelfManager.shared.isVisible ? "Hide Drop Shelf" : "Show Drop Shelf"
+        let shelfItem = NSMenuItem(title: "\(shelfTitle) (\(settings.dropShelfHotkeyDisplay))", action: #selector(toggleDropShelf), keyEquivalent: "")
+        shelfItem.target = self
+        menu.addItem(shelfItem)
+
         menu.addItem(.separator())
 
         let statsItem = NSMenuItem(
@@ -142,6 +147,10 @@ public final class StatusBarController: NSObject, NSMenuDelegate {
 
     @objc private func openSnippets() {
         SettingsWindowController.shared.show(tab: .snippets)
+    }
+
+    @objc private func toggleDropShelf() {
+        DropShelfManager.shared.toggle()
     }
 
     @objc private func openAbout() {

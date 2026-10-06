@@ -16,16 +16,18 @@ INSTALL_PATH="/Applications/$APP_BUNDLE"
 # ---------------------------------------------------------------------------
 find_valid_sdk() {
     local candidates=()
+    [ -d "/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk" ] && candidates+=("/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk")
+    [ -d "/Library/Developer/CommandLineTools/SDKs/MacOSX15.sdk" ] && candidates+=("/Library/Developer/CommandLineTools/SDKs/MacOSX15.sdk")
+    for d in /Applications/Xcode*.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk; do
+        [ -d "$d" ] && candidates+=("$d")
+    done
     local default_sdk
     default_sdk="$(xcrun --sdk macosx --show-sdk-path 2>/dev/null || true)"
     [ -n "$default_sdk" ] && candidates+=("$default_sdk")
     [ -d "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk" ] && candidates+=("/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk")
-    for d in /Applications/Xcode*.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk; do
-        [ -d "$d" ] && candidates+=("$d")
-    done
 
     for candidate in "${candidates[@]}"; do
-        if [ -d "$candidate" ] && echo "import Foundation" | swiftc -sdk "$candidate" - -o /dev/null >/dev/null 2>&1; then
+        if [ -d "$candidate" ] && echo 'import SwiftUI; struct T: View { @State var x = 0; var body: some View { Text("\(x)") } }' | swiftc -sdk "$candidate" - -o /dev/null >/dev/null 2>&1; then
             echo "$candidate"
             return 0
         fi

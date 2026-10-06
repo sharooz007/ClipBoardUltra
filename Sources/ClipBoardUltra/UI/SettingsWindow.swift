@@ -11,6 +11,7 @@ public enum SettingsTab: String, CaseIterable, Identifiable {
     case paste = "Paste"
     case privacy = "Privacy"
     case snippets = "Snippets"
+    case dropShelf = "Drop Shelf"
     case about = "About"
 
     public var id: String { rawValue }
@@ -21,6 +22,7 @@ public enum SettingsTab: String, CaseIterable, Identifiable {
         case .paste: return "doc.on.clipboard"
         case .privacy: return "hand.raised"
         case .snippets: return "bookmark"
+        case .dropShelf: return "tray.and.arrow.down"
         case .about: return "info.circle"
         }
     }
@@ -60,6 +62,7 @@ public final class SettingsWindowController: NSObject, NSWindowDelegate {
             window = w
         }
         NSApp.activate(ignoringOtherApps: true)
+        window?.orderFrontRegardless()
         window?.makeKeyAndOrderFront(nil)
     }
 }
@@ -103,6 +106,7 @@ struct SettingsView: View {
                 case .paste: PastePane()
                 case .privacy: PrivacyPane()
                 case .snippets: SnippetsPane(navigation: navigation)
+                case .dropShelf: DropShelfPane()
                 case .about: AboutPane()
                 }
             }
@@ -964,6 +968,160 @@ struct AboutPane: View {
                 .padding(.bottom, 12)
             }
             .padding(24)
+        }
+    }
+}
+
+// MARK: - Drop Shelf Pane
+
+struct DropShelfShortcutRecorder: View {
+    @ObservedObject private var settings = SettingsStore.shared
+    @State private var recording = false
+    @State private var monitor: Any?
+    @State private var message: String?
+
+    var body: some View {
+        VStack(alignment: .trailing, spacing: 4) {
+            HStack(spacing: 8) {
+                Button {
+                    recording ? stop(restore: true) : start()
+                } label: {
+                    Text(recording ? "Press keys…  esc cancels" : settings.dropShelfHotkeyDisplay)
+                        .font(recording ? .system(size: 11.5, weight: .semibold) : Theme.mono(13, .bold))
+                        .frame(minWidth: 90)
+                }
+                .buttonStyle(KeycapStyle(tone: recording ? .orange : .bone))
+                .accessibilityLabel("Drop shelf shortcut \(settings.dropShelfHotkeyDisplay). Click to change.")
+
+                if settings.dropShelfHotkeyKeyCode != UInt32(kVK_ANSI_D) || settings.dropShelfHotkeyModifiers != UInt32(cmdKey | optionKey) {
+                    Button("Reset") { apply(keyCode: UInt32(kVK_ANSI_D), modifiers: UInt32(cmdKey | optionKey)) }
+                        .buttonStyle(KeycapStyle(tone: .graphite, compact: true))
+                }
+            }
+            if let message {
+                Text(message)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(Theme.orange)
+            }
+        }
+        .onDisappear { if recording { stop(restore: true) } }
+    }
+
+    private func start() {
+        message = nil
+        recording = true
+        HotkeyManager.shared.unregisterDropShelfHotkey()
+        monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            if event.keyCode == UInt16(kVK_Escape) {
+                stop(restore: true)
+                return nil
+            }
+            let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            let mods = HotkeyFormatter.carbonModifiers(from: flags)
+            let needsModifier = mods & UInt32(cmdKey | optionKey | controlKey) == 0
+            let isFunctionKey = (kVK_F1...kVK_F12).contains(Int(event.keyCode))
+            if needsModifier && !isFunctionKey {
+                message = "Include ⌘, ⌥ or ⌃ in the shortcut."
+                NSSound.beep()
+                return nil
+            }
+            apply(keyCode: UInt32(event.keyCode), modifiers: mods)
+            stop(restore: false)
+            return nil
+        }
+    }
+
+    private func apply(keyCode: UInt32, modifiers: UInt32) {
+        let status = HotkeyManager.shared.registerDropShelf(keyCode: keyCode, modifiers: modifiers)
+        if status == noErr {
+            settings.dropShelfHotkeyKeyCode = keyCode
+            settings.dropShelfHotkeyModifiers = modifiers
+            message = nil
+        } else {
+            message = "\(HotkeyFormatter.string(keyCode: keyCode, modifiers: modifiers)) is already used by another app."
+            HotkeyManager.shared.registerDefaultDropShelfHotkey()
+        }
+    }
+
+    private func stop(restore: Bool) {
+        if let monitor { NSEvent.removeMonitor(monitor) }
+        monitor = nil
+        recording = false
+        if restore { HotkeyManager.shared.registerDefaultDropShelfHotkey() }
+    }
+}
+
+struct DropShelfPane: View {
+    @ObservedObject private var settings = SettingsStore.shared
+    @ObservedObject private var manager = DropShelfManager.shared
+
+    var body: some View {
+        ScrollView(.vertical, showsIndicators: true) {
+            VStack(alignment: .leading, spacing: 20) {
+                // Activation & Gestures
+                SettingsSection(title: "Activation & Gestures", footnote: "Hold and shake any file selection while dragging to spawn the drop zone near your cursor.") {
+                    SettingsRow(title: "Enable Quick Drop Shelf", detail: "Temporary staging basket to gather files from multiple folders") {
+                        Toggle("", isOn: $settings.dropShelfEnabled)
+                            .labelsHidden()
+                    }
+
+                    SettingsRow(title: "Shake Cursor to Summon", detail: "Shake mouse quickly back and forth while dragging files in Finder") {
+                        Toggle("", isOn: $settings.dropShelfShakeToSummon)
+                            .labelsHidden()
+                            .disabled(!settings.dropShelfEnabled)
+                    }
+
+                    SettingsRow(title: "Summon Shortcut", detail: "Global shortcut to open or hide the drop shelf anytime", showDivider: false) {
+                        DropShelfShortcutRecorder()
+                            .disabled(!settings.dropShelfEnabled)
+                    }
+                }
+
+                // Behavior
+                SettingsSection(title: "Shelf Behavior", footnote: "Dragged files follow standard macOS filesystem rules.") {
+                    SettingsRow(title: "Auto-Dismiss When Emptied", detail: "Automatically fades away when all items are dragged out to destination") {
+                        Toggle("", isOn: $settings.dropShelfAutoDismiss)
+                            .labelsHidden()
+                    }
+
+                    SettingsRow(title: "Manual Control", detail: "Toggle the drop shelf right now to test", showDivider: false) {
+                        Button {
+                            manager.toggle()
+                        } label: {
+                            HStack(spacing: 5) {
+                                Image(systemName: manager.isVisible ? "eye.slash" : "tray.and.arrow.down")
+                                Text(manager.isVisible ? "Hide Drop Shelf" : "Show Drop Shelf")
+                            }
+                        }
+                        .buttonStyle(KeycapStyle(tone: .orange, compact: true))
+                    }
+                }
+
+                // How it works
+                SettingsSection(title: "How It Works", footnote: "Collect files from multiple folders, then drag them all together in one move.") {
+                    VStack(alignment: .leading, spacing: 10) {
+                        guideStep(number: "1", text: "Select files in Finder, start dragging, and shake your cursor back and forth.")
+                        guideStep(number: "2", text: "Drop files onto the shelf. Navigate to any other folder to add more files.")
+                        guideStep(number: "3", text: "At your destination, drag all items out at once. The shelf automatically disappears!")
+                    }
+                    .padding(.vertical, 4)
+                }
+            }
+            .padding(24)
+        }
+    }
+
+    private func guideStep(number: String, text: String) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Text(number)
+                .font(Theme.mono(11, .bold))
+                .foregroundColor(Theme.orange)
+                .frame(width: 18, height: 18)
+                .background(Circle().fill(Theme.chassisLow))
+            Text(text)
+                .font(.system(size: 12))
+                .foregroundColor(Theme.bone)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 }
