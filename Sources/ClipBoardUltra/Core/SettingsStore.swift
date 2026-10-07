@@ -49,11 +49,31 @@ public final class SettingsStore: ObservableObject {
         public var label: String { self == .paste ? "Paste into the previous app" : "Copy to the clipboard only" }
     }
 
+    public enum AppTheme: String, CaseIterable, Identifiable {
+        case tactileDesk = "tactileDesk"
+        case liquidGlass = "liquidGlass"
+
+        public var id: String { rawValue }
+        public var label: String {
+            switch self {
+            case .tactileDesk: return "Tactile Desk"
+            case .liquidGlass: return "Liquid Glass"
+            }
+        }
+        public var detail: String {
+            switch self {
+            case .tactileDesk: return "Physical desk instrument · gunmetal chassis, thermal paper roll, tactile keycaps"
+            case .liquidGlass: return "Apple native material · translucent optical glass, specular rim light, vibrant depth"
+            }
+        }
+    }
+
     public static let historyLimits = [100, 300, 1000, 5000]
     public static let imageLimitsMB = [5, 20, 50, 0]   // 0 = no limit
 
     // MARK: General
 
+    @Published public var appTheme: AppTheme { didSet { defaults.set(appTheme.rawValue, forKey: "appTheme") } }
     @Published public var hotkeyKeyCode: UInt32 { didSet { defaults.set(Int(hotkeyKeyCode), forKey: "hotkeyKeyCode") } }
     @Published public var hotkeyModifiers: UInt32 { didSet { defaults.set(Int(hotkeyModifiers), forKey: "hotkeyModifiers") } }
     @Published public var overlayPlacement: OverlayPlacement { didSet { defaults.set(overlayPlacement.rawValue, forKey: "overlayPlacement") } }
@@ -124,9 +144,11 @@ public final class SettingsStore: ObservableObject {
             "dropShelfShakeToSummon": true,
             "dropShelfHotkeyKeyCode": kVK_ANSI_D,
             "dropShelfHotkeyModifiers": cmdKey | optionKey,
-            "dropShelfAutoDismiss": true
+            "dropShelfAutoDismiss": true,
+            "appTheme": AppTheme.tactileDesk.rawValue
         ])
 
+        appTheme = AppTheme(rawValue: defaults.string(forKey: "appTheme") ?? "") ?? .tactileDesk
         hotkeyKeyCode = UInt32(defaults.integer(forKey: "hotkeyKeyCode"))
         hotkeyModifiers = UInt32(defaults.integer(forKey: "hotkeyModifiers"))
         dropShelfEnabled = defaults.bool(forKey: "dropShelfEnabled")

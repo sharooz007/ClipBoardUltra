@@ -1,6 +1,7 @@
 import Cocoa
 import SwiftUI
 import Carbon
+import Combine
 
 extension Notification.Name {
     static let overlayDidShow = Notification.Name("ClipBoardUltraOverlayDidShow")
@@ -109,6 +110,7 @@ public final class OverlayPanelManager: NSObject, NSWindowDelegate {
 
     public private(set) var panel: CustomPanel?
     private var globalClickMonitor: Any?
+    private var themeCancellable: AnyCancellable?
 
     static let panelSize = NSSize(width: 800, height: 540)
 
@@ -135,7 +137,6 @@ public final class OverlayPanelManager: NSObject, NSWindowDelegate {
         customPanel.isMovableByWindowBackground = true
         customPanel.hidesOnDeactivate = false
         customPanel.becomesKeyOnlyIfNeeded = false
-        customPanel.appearance = NSAppearance(named: .darkAqua)
         customPanel.delegate = self
 
         let mainView = MainView(
@@ -148,6 +149,24 @@ public final class OverlayPanelManager: NSObject, NSWindowDelegate {
         hostingView.frame = NSRect(origin: .zero, size: Self.panelSize)
         customPanel.contentView = hostingView
         panel = customPanel
+
+        updateAppearance(for: SettingsStore.shared.appTheme)
+
+        themeCancellable = SettingsStore.shared.$appTheme
+            .receive(on: RunLoop.main)
+            .sink { [weak self] theme in
+                self?.updateAppearance(for: theme)
+            }
+    }
+
+    public func updateAppearance(for theme: SettingsStore.AppTheme = SettingsStore.shared.appTheme) {
+        guard let panel else { return }
+        switch theme {
+        case .tactileDesk:
+            panel.appearance = NSAppearance(named: .darkAqua)
+        case .liquidGlass:
+            panel.appearance = nil
+        }
     }
 
     public func toggle() {
@@ -157,6 +176,8 @@ public final class OverlayPanelManager: NSObject, NSWindowDelegate {
     public func show() {
         setupPanel()
         guard let panel else { return }
+
+        updateAppearance()
 
         PasteEngine.shared.recordActiveApplication()
         PasteEngine.shared.checkAccessibilityStatus()

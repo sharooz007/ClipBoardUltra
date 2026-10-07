@@ -4,29 +4,68 @@ import SwiftUI
 /// Main visual interface for the Quick Drop Shelf.
 public struct DropShelfView: View {
     @ObservedObject private var manager = DropShelfManager.shared
+    @ObservedObject private var settings = SettingsStore.shared
     @State private var isHoveringClose = false
+
+    private var isLiquidGlass: Bool { settings.appTheme == .liquidGlass }
 
     public init() {}
 
     public var body: some View {
         ZStack {
-            // Background Chassis with frosted glass effect
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Theme.chassis.opacity(0.88))
-                .background(
+            // Background Chassis
+            if isLiquidGlass {
+                ZStack {
+                    VisualEffectBlur(material: .popover, blendingMode: .behindWindow)
+                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
                         .fill(.ultraThinMaterial)
-                )
-                .overlay(
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .stroke(
+                        .fill(Color(nsColor: .windowBackgroundColor).opacity(0.18))
+                    VStack {
+                        TopRoundedCorners(radius: 16)
+                            .fill(
+                                LinearGradient(
+                                    colors: [
+                                        Color.white.opacity(0.20),
+                                        Color.white.opacity(0.05),
+                                        Color.clear
+                                    ],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
+                            )
+                            .frame(height: 40)
+                            .allowsHitTesting(false)
+                        Spacer()
+                    }
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .strokeBorder(
                             manager.isTargetHighlighted
-                                ? Theme.orange.opacity(0.9)
-                                : Theme.boneDim.opacity(0.25),
+                                ? LinearGradient(colors: [LiquidGlass.accent, LiquidGlass.accent], startPoint: .top, endPoint: .bottom)
+                                : LiquidGlass.specularRim,
                             lineWidth: manager.isTargetHighlighted ? 2 : 1
                         )
-                )
-                .shadow(color: Color.black.opacity(0.45), radius: 14, x: 0, y: 6)
+                }
+                .shadow(color: Color.black.opacity(0.35), radius: 18, x: 0, y: 8)
+            } else {
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(Theme.chassis.opacity(0.88))
+                    .background(
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .fill(.ultraThinMaterial)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .stroke(
+                                manager.isTargetHighlighted
+                                    ? Theme.orange.opacity(0.9)
+                                    : Theme.boneDim.opacity(0.25),
+                                lineWidth: manager.isTargetHighlighted ? 2 : 1
+                            )
+                    )
+                    .shadow(color: Color.black.opacity(0.45), radius: 14, x: 0, y: 6)
+            }
 
             VStack(spacing: 0) {
                 // Header Bar
@@ -36,7 +75,7 @@ public struct DropShelfView: View {
                     .padding(.bottom, 8)
 
                 Divider()
-                    .background(Theme.chassisTop.opacity(0.6))
+                    .background(isLiquidGlass ? Color.primary.opacity(0.08) : Theme.chassisTop.opacity(0.6))
 
                 // Content Area
                 if manager.items.isEmpty {
@@ -53,29 +92,33 @@ public struct DropShelfView: View {
 
     // MARK: - Header
     private var headerView: some View {
-        HStack(spacing: 8) {
+        let accentColor: Color = isLiquidGlass
+            ? (manager.items.isEmpty ? LiquidGlass.accent : Color.green)
+            : (manager.items.isEmpty ? Theme.amber : Theme.orange)
+
+        return HStack(spacing: 8) {
             // Glowing Indicator Dot
             Circle()
-                .fill(manager.items.isEmpty ? Theme.amber : Theme.orange)
+                .fill(accentColor)
                 .frame(width: 7, height: 7)
-                .shadow(color: (manager.items.isEmpty ? Theme.amber : Theme.orange).opacity(0.6), radius: 4)
+                .shadow(color: accentColor.opacity(0.6), radius: 4)
 
             Text("DROP SHELF")
-                .font(Theme.mono(10, .bold))
-                .foregroundColor(Theme.bone)
+                .font(isLiquidGlass ? .system(size: 10, weight: .bold, design: .rounded) : Theme.mono(10, .bold))
+                .foregroundColor(isLiquidGlass ? .primary : Theme.bone)
                 .tracking(0.5)
 
             Spacer()
 
             if !manager.items.isEmpty {
                 Text("\(manager.items.count) \(manager.items.count == 1 ? "FILE" : "FILES")")
-                    .font(Theme.mono(9, .semibold))
-                    .foregroundColor(Theme.amber)
+                    .font(isLiquidGlass ? .system(size: 9.5, weight: .bold, design: .rounded) : Theme.mono(9, .semibold))
+                    .foregroundColor(isLiquidGlass ? LiquidGlass.accent : Theme.amber)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
                     .background(
                         RoundedRectangle(cornerRadius: 4, style: .continuous)
-                            .fill(Theme.chassisLow)
+                            .fill(isLiquidGlass ? Color.primary.opacity(0.06) : Theme.chassisLow)
                     )
             }
 
@@ -85,10 +128,10 @@ public struct DropShelfView: View {
             } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 9, weight: .bold))
-                    .foregroundColor(isHoveringClose ? Theme.bone : Theme.boneDim)
+                    .foregroundColor(isHoveringClose ? (isLiquidGlass ? .primary : Theme.bone) : (isLiquidGlass ? .secondary : Theme.boneDim))
                     .frame(width: 18, height: 18)
                     .background(
-                        Circle().fill(isHoveringClose ? Theme.chassisTop : Color.clear)
+                        Circle().fill(isHoveringClose ? (isLiquidGlass ? Color.primary.opacity(0.1) : Theme.chassisTop) : Color.clear)
                     )
             }
             .buttonStyle(.plain)
@@ -98,18 +141,21 @@ public struct DropShelfView: View {
 
     // MARK: - Empty State
     private var emptyDropZone: some View {
-        VStack(spacing: 8) {
+        let highlightColor: Color = isLiquidGlass ? LiquidGlass.accent : Theme.orange
+        let primaryColor: Color = isLiquidGlass ? LiquidGlass.accent : Theme.amber
+
+        return VStack(spacing: 8) {
             Spacer()
 
             ZStack {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .strokeBorder(
-                        manager.isTargetHighlighted ? Theme.orange : Theme.boneDim.opacity(0.35),
+                        manager.isTargetHighlighted ? highlightColor : (isLiquidGlass ? Color.white.opacity(0.2) : Theme.boneDim.opacity(0.35)),
                         style: StrokeStyle(lineWidth: 1.5, dash: [5, 4])
                     )
                     .background(
                         RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .fill(manager.isTargetHighlighted ? Theme.orange.opacity(0.08) : Theme.chassisLow.opacity(0.4))
+                            .fill(manager.isTargetHighlighted ? highlightColor.opacity(0.12) : (isLiquidGlass ? Color.primary.opacity(0.02) : Theme.chassisLow.opacity(0.4)))
                     )
                     .frame(maxWidth: .infinity)
                     .frame(height: 120)
@@ -118,15 +164,15 @@ public struct DropShelfView: View {
                 VStack(spacing: 6) {
                     Image(systemName: manager.isTargetHighlighted ? "arrow.down.circle.fill" : "tray.and.arrow.down")
                         .font(.system(size: 24))
-                        .foregroundColor(manager.isTargetHighlighted ? Theme.orange : Theme.amber)
+                        .foregroundColor(manager.isTargetHighlighted ? highlightColor : primaryColor)
 
                     Text(manager.isTargetHighlighted ? "Release to drop" : "Drop files here")
-                        .font(Theme.mono(12, .semibold))
-                        .foregroundColor(Theme.bone)
+                        .font(isLiquidGlass ? .system(size: 12, weight: .semibold) : Theme.mono(12, .semibold))
+                        .foregroundColor(isLiquidGlass ? .primary : Theme.bone)
 
                     Text("Shake while dragging to summon")
                         .font(.system(size: 10))
-                        .foregroundColor(Theme.boneDim.opacity(0.7))
+                        .foregroundColor(isLiquidGlass ? .secondary : Theme.boneDim.opacity(0.7))
                 }
             }
 
@@ -151,30 +197,40 @@ public struct DropShelfView: View {
             }
 
             Divider()
-                .background(Theme.chassisTop.opacity(0.6))
+                .background(isLiquidGlass ? Color.primary.opacity(0.08) : Theme.chassisTop.opacity(0.6))
 
             // Bottom Actions: Drag All Bar & Clear
             HStack(spacing: 8) {
                 // Clear all button
-                Button {
-                    manager.clearAll()
-                } label: {
-                    Text("Clear")
-                        .font(Theme.mono(10, .medium))
-                        .foregroundColor(Theme.boneDim)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 6)
-                        .background(
-                            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                .fill(Theme.chassisLow)
-                        )
+                if isLiquidGlass {
+                    Button {
+                        manager.clearAll()
+                    } label: {
+                        Text("Clear")
+                    }
+                    .buttonStyle(GlassPillStyle(tone: .destructive, compact: true))
+                } else {
+                    Button {
+                        manager.clearAll()
+                    } label: {
+                        Text("Clear")
+                            .font(Theme.mono(10, .medium))
+                            .foregroundColor(Theme.boneDim)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 6)
+                            .background(
+                                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                    .fill(Theme.chassisLow)
+                            )
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
 
-                // Drag All Keycap Button (AppKit Native Drag Source)
+                // Drag All Button (AppKit Native Drag Source)
                 DragAllSourceView(
                     urls: manager.items.map { $0.url },
                     title: "Drag All to Destination (\(manager.items.count))",
+                    isLiquidGlass: isLiquidGlass,
                     onSuccess: { droppedURLs in
                         manager.removeItems(matching: droppedURLs)
                     }
@@ -196,13 +252,13 @@ public struct DropShelfView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(item.name)
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(Theme.bone)
+                    .foregroundColor(isLiquidGlass ? .primary : Theme.bone)
                     .lineLimit(1)
                     .truncationMode(.middle)
 
                 Text(item.formattedSize)
-                    .font(Theme.mono(9, .regular))
-                    .foregroundColor(Theme.boneDim)
+                    .font(isLiquidGlass ? .system(size: 9.5) : Theme.mono(9, .regular))
+                    .foregroundColor(isLiquidGlass ? .secondary : Theme.boneDim)
             }
 
             Spacer()
@@ -219,9 +275,9 @@ public struct DropShelfView: View {
             } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 8, weight: .bold))
-                    .foregroundColor(Theme.boneDim.opacity(0.8))
+                    .foregroundColor(isLiquidGlass ? .secondary : Theme.boneDim.opacity(0.8))
                     .frame(width: 16, height: 16)
-                    .background(Circle().fill(Theme.chassisLow))
+                    .background(Circle().fill(isLiquidGlass ? Color.primary.opacity(0.08) : Theme.chassisLow))
             }
             .buttonStyle(.plain)
         }
@@ -229,7 +285,11 @@ public struct DropShelfView: View {
         .padding(.vertical, 5)
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(Theme.chassisLow.opacity(0.7))
+                .fill(isLiquidGlass ? Color.primary.opacity(0.035) : Theme.chassisLow.opacity(0.7))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .strokeBorder(isLiquidGlass ? Color.white.opacity(0.12) : Color.clear, lineWidth: 0.5)
+                )
         )
     }
 }
@@ -238,12 +298,14 @@ public struct DropShelfView: View {
 struct DragAllSourceView: NSViewRepresentable {
     var urls: [URL]
     var title: String
+    var isLiquidGlass: Bool = false
     var onSuccess: ([URL]) -> Void
 
     func makeNSView(context: Context) -> DragAllButtonNSView {
         let view = DragAllButtonNSView()
         view.urls = urls
         view.title = title
+        view.isLiquidGlass = isLiquidGlass
         view.onSuccess = onSuccess
         return view
     }
@@ -251,6 +313,7 @@ struct DragAllSourceView: NSViewRepresentable {
     func updateNSView(_ nsView: DragAllButtonNSView, context: Context) {
         nsView.urls = urls
         nsView.title = title
+        nsView.isLiquidGlass = isLiquidGlass
         nsView.onSuccess = onSuccess
         nsView.needsDisplay = true
     }
@@ -259,6 +322,7 @@ struct DragAllSourceView: NSViewRepresentable {
 final class DragAllButtonNSView: NSView, NSDraggingSource {
     var urls: [URL] = []
     var title: String = ""
+    var isLiquidGlass: Bool = false
     var onSuccess: (([URL]) -> Void)?
 
     private var isHighlighted: Bool = false
@@ -276,39 +340,74 @@ final class DragAllButtonNSView: NSView, NSDraggingSource {
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
 
-        let cornerRadius: CGFloat = 6.0
+        let cornerRadius: CGFloat = isLiquidGlass ? 8.0 : 6.0
         let bgPath = NSBezierPath(roundedRect: bounds, xRadius: cornerRadius, yRadius: cornerRadius)
 
-        // Safety-orange background
-        let baseColor = isHighlighted ? NSColor(red: 1.0, green: 0.45, blue: 0.1, alpha: 1.0) : NSColor(red: 0.95, green: 0.38, blue: 0.08, alpha: 1.0)
-        baseColor.setFill()
-        bgPath.fill()
+        if isLiquidGlass {
+            // Apple System Blue fill with subtle specular highlight
+            let baseColor = isHighlighted
+                ? NSColor(red: 0.0, green: 0.44, blue: 0.92, alpha: 1.0)
+                : NSColor(red: 0.04, green: 0.52, blue: 1.0, alpha: 0.95)
+            baseColor.setFill()
+            bgPath.fill()
 
-        // Border
-        NSColor(white: 1.0, alpha: 0.15).setStroke()
-        bgPath.lineWidth = 1.0
-        bgPath.stroke()
+            // Specular rim border
+            NSColor(white: 1.0, alpha: 0.3).setStroke()
+            bgPath.lineWidth = 1.0
+            bgPath.stroke()
 
-        // Text & Icon
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.alignment = .center
+            // Text & Icon
+            let paragraph = NSMutableParagraphStyle()
+            paragraph.alignment = .center
 
-        let attrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.monospacedSystemFont(ofSize: 10, weight: .bold),
-            .foregroundColor: NSColor.white,
-            .paragraphStyle: paragraph
-        ]
+            let attrs: [NSAttributedString.Key: Any] = [
+                .font: NSFont.systemFont(ofSize: 11, weight: .semibold),
+                .foregroundColor: NSColor.white,
+                .paragraphStyle: paragraph
+            ]
 
-        let fullText = "⇥ \(title)"
-        let str = NSAttributedString(string: fullText, attributes: attrs)
-        let strSize = str.size()
-        let textRect = NSRect(
-            x: 0,
-            y: (bounds.height - strSize.height) / 2 - 1,
-            width: bounds.width,
-            height: strSize.height
-        )
-        str.draw(in: textRect)
+            let fullText = "⇥  \(title)"
+            let str = NSAttributedString(string: fullText, attributes: attrs)
+            let strSize = str.size()
+            let textRect = NSRect(
+                x: 0,
+                y: (bounds.height - strSize.height) / 2 - 0.5,
+                width: bounds.width,
+                height: strSize.height
+            )
+            str.draw(in: textRect)
+        } else {
+            // Safety-orange background
+            let baseColor = isHighlighted ? NSColor(red: 1.0, green: 0.45, blue: 0.1, alpha: 1.0) : NSColor(red: 0.95, green: 0.38, blue: 0.08, alpha: 1.0)
+            baseColor.setFill()
+            bgPath.fill()
+
+            // Border
+            NSColor(white: 1.0, alpha: 0.15).setStroke()
+            bgPath.lineWidth = 1.0
+            bgPath.stroke()
+
+            // Text & Icon
+            let paragraph = NSMutableParagraphStyle()
+            paragraph.alignment = .center
+
+            let attrs: [NSAttributedString.Key: Any] = [
+                .font: NSFont.monospacedSystemFont(ofSize: 10, weight: .bold),
+                .foregroundColor: NSColor.white,
+                .paragraphStyle: paragraph
+            ]
+
+            let fullText = "⇥ \(title)"
+            let str = NSAttributedString(string: fullText, attributes: attrs)
+            let strSize = str.size()
+            let textRect = NSRect(
+                x: 0,
+                y: (bounds.height - strSize.height) / 2 - 1,
+                width: bounds.width,
+                height: strSize.height
+            )
+            str.draw(in: textRect)
+        }
     }
 
     override func mouseDown(with event: NSEvent) {

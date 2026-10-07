@@ -2,6 +2,7 @@ import Cocoa
 import SwiftUI
 import Carbon
 import UniformTypeIdentifiers
+import Combine
 
 // MARK: - Window
 
@@ -38,6 +39,7 @@ public final class SettingsWindowController: NSObject, NSWindowDelegate {
     public static let shared = SettingsWindowController()
     private var window: NSWindow?
     let navigation = SettingsNavigation()
+    private var themeCancellable: AnyCancellable?
 
     public func show(tab: SettingsTab? = nil, selectSnippet: UUID? = nil) {
         if let tab { navigation.tab = tab }
@@ -45,7 +47,7 @@ public final class SettingsWindowController: NSObject, NSWindowDelegate {
 
         if window == nil {
             let w = NSWindow(
-                contentRect: NSRect(x: 0, y: 0, width: 760, height: 560),
+                contentRect: NSRect(x: 0, y: 0, width: 820, height: 600),
                 styleMask: [.titled, .closable, .miniaturizable, .fullSizeContentView],
                 backing: .buffered, defer: false
             )
@@ -53,17 +55,35 @@ public final class SettingsWindowController: NSObject, NSWindowDelegate {
             w.titlebarAppearsTransparent = true
             w.titleVisibility = .hidden
             w.isMovableByWindowBackground = true
-            w.appearance = NSAppearance(named: .darkAqua)
-            w.backgroundColor = NSColor(Theme.chassis)
             w.isReleasedWhenClosed = false
             w.delegate = self
             w.contentView = NSHostingView(rootView: SettingsView(navigation: navigation))
             w.center()
             window = w
+
+            updateAppearance()
+
+            themeCancellable = SettingsStore.shared.$appTheme
+                .receive(on: RunLoop.main)
+                .sink { [weak self] _ in
+                    self?.updateAppearance()
+                }
         }
         NSApp.activate(ignoringOtherApps: true)
         window?.orderFrontRegardless()
         window?.makeKeyAndOrderFront(nil)
+    }
+
+    public func updateAppearance() {
+        guard let window else { return }
+        switch SettingsStore.shared.appTheme {
+        case .tactileDesk:
+            window.appearance = NSAppearance(named: .darkAqua)
+            window.backgroundColor = NSColor(Theme.chassis)
+        case .liquidGlass:
+            window.appearance = nil
+            window.backgroundColor = .clear
+        }
     }
 }
 
@@ -71,33 +91,56 @@ public final class SettingsWindowController: NSObject, NSWindowDelegate {
 
 struct SettingsView: View {
     @ObservedObject var navigation: SettingsNavigation
+    @ObservedObject private var settings = SettingsStore.shared
+
+    private var isLiquidGlass: Bool { settings.appTheme == .liquidGlass }
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 10) {
+            HStack(spacing: 8) {
                 LogoMark(size: 22)
                 Text("Settings")
                     .font(.system(size: 15, weight: .semibold))
-                    .foregroundColor(Theme.bone)
-                Spacer()
-                HStack(spacing: 7) {
+                    .foregroundColor(isLiquidGlass ? .primary : Theme.bone)
+                Spacer(minLength: 6)
+                HStack(spacing: 4) {
                     ForEach(SettingsTab.allCases) { tab in
-                        Button {
-                            navigation.tab = tab
-                        } label: {
-                            Label(tab.rawValue, systemImage: tab.icon)
+                        if isLiquidGlass {
+                            Button {
+                                navigation.tab = tab
+                            } label: {
+                                HStack(spacing: 4) {
+                                    Image(systemName: tab.icon).font(.system(size: 10, weight: .semibold))
+                                    Text(tab.rawValue).font(.system(size: 11, weight: .medium))
+                                }
+                            }
+                            .buttonStyle(GlassPillStyle(isSelected: navigation.tab == tab, compact: true))
+                            .fixedSize(horizontal: true, vertical: false)
+                            .accessibilityAddTraits(navigation.tab == tab ? .isSelected : [])
+                        } else {
+                            Button {
+                                navigation.tab = tab
+                            } label: {
+                                HStack(spacing: 3.5) {
+                                    Image(systemName: tab.icon).font(.system(size: 9, weight: .semibold))
+                                    Text(tab.rawValue).font(Theme.mono(10, .medium))
+                                }
+                            }
+                            .buttonStyle(KeycapStyle(tone: .graphite, lit: navigation.tab == tab, compact: true))
+                            .fixedSize(horizontal: true, vertical: false)
+                            .accessibilityAddTraits(navigation.tab == tab ? .isSelected : [])
                         }
-                        .buttonStyle(KeycapStyle(tone: .graphite, lit: navigation.tab == tab, compact: true))
-                        .accessibilityAddTraits(navigation.tab == tab ? .isSelected : [])
                     }
                 }
             }
-            .padding(.leading, 80)   // clear the traffic-light buttons
-            .padding(.trailing, 18)
+            .padding(.leading, 72)   // clear the traffic-light buttons
+            .padding(.trailing, 16)
             .padding(.top, 14)
             .padding(.bottom, 14)
 
-            Rectangle().fill(Color.black.opacity(0.5)).frame(height: 1)
+            Rectangle()
+                .fill(isLiquidGlass ? Color.primary.opacity(0.08) : Color.black.opacity(0.5))
+                .frame(height: 1)
 
             Group {
                 switch navigation.tab {
@@ -113,11 +156,22 @@ struct SettingsView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(minWidth: 760, minHeight: 560)
-        .background(
+        .background(settingsBackground)
+        .tint(isLiquidGlass ? LiquidGlass.accent : Theme.orange)
+    }
+
+    @ViewBuilder
+    private var settingsBackground: some View {
+        if isLiquidGlass {
+            ZStack {
+                VisualEffectBlur(material: .underWindowBackground, blendingMode: .behindWindow)
+                Color(nsColor: .windowBackgroundColor).opacity(0.35)
+            }
+            .ignoresSafeArea()
+        } else {
             LinearGradient(colors: [Theme.chassisTop, Theme.chassis], startPoint: .top, endPoint: .bottom)
                 .ignoresSafeArea()
-        )
-        .tint(Theme.orange)
+        }
     }
 }
 
@@ -128,23 +182,40 @@ struct SettingsSection<Content: View>: View {
     let title: String
     var footnote: String?
     @ViewBuilder var content: Content
+    @ObservedObject private var settings = SettingsStore.shared
+    private var isLiquidGlass: Bool { settings.appTheme == .liquidGlass }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title.uppercased())
-                .font(Theme.mono(10, .semibold))
-                .foregroundColor(Theme.amber.opacity(0.85))
+                .font(isLiquidGlass ? .system(size: 10, weight: .bold, design: .rounded) : Theme.mono(10, .semibold))
+                .foregroundColor(isLiquidGlass ? LiquidGlass.accent : Theme.amber.opacity(0.85))
                 .padding(.leading, 2)
             VStack(spacing: 0) { content }
                 .background(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(Theme.screen)
-                        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(Color.black.opacity(0.7), lineWidth: 1))
+                    Group {
+                        if isLiquidGlass {
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .fill(Color.primary.opacity(0.035))
+                                .background(
+                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                        .fill(.ultraThinMaterial)
+                                )
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                        .strokeBorder(Color.white.opacity(0.16), lineWidth: 0.75)
+                                )
+                        } else {
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .fill(Theme.screen)
+                                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(Color.black.opacity(0.7), lineWidth: 1))
+                        }
+                    }
                 )
             if let footnote {
                 Text(footnote)
                     .font(.system(size: 11))
-                    .foregroundColor(Theme.boneDim)
+                    .foregroundColor(isLiquidGlass ? .secondary : Theme.boneDim)
                     .padding(.leading, 2)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -158,18 +229,20 @@ struct SettingsRow<Control: View>: View {
     var detail: String?
     var showDivider = true
     @ViewBuilder var control: Control
+    @ObservedObject private var settings = SettingsStore.shared
+    private var isLiquidGlass: Bool { settings.appTheme == .liquidGlass }
 
     var body: some View {
         VStack(spacing: 0) {
             HStack(alignment: .center, spacing: 16) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
-                        .font(.system(size: 13))
-                        .foregroundColor(Theme.bone)
+                        .font(.system(size: 13, weight: isLiquidGlass ? .medium : .regular))
+                        .foregroundColor(isLiquidGlass ? .primary : Theme.bone)
                     if let detail {
                         Text(detail)
                             .font(.system(size: 11))
-                            .foregroundColor(Theme.boneDim)
+                            .foregroundColor(isLiquidGlass ? .secondary : Theme.boneDim)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
@@ -179,7 +252,169 @@ struct SettingsRow<Control: View>: View {
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
             if showDivider {
-                Rectangle().fill(Theme.hairline).frame(height: 1).padding(.leading, 14)
+                Rectangle()
+                    .fill(isLiquidGlass ? Color.primary.opacity(0.08) : Theme.hairline)
+                    .frame(height: 1)
+                    .padding(.leading, 14)
+            }
+        }
+    }
+}
+
+// MARK: - Theme Preview Card
+
+struct ThemePreviewCard: View {
+    let theme: SettingsStore.AppTheme
+    let isSelected: Bool
+    let onSelect: () -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: onSelect) {
+            VStack(alignment: .leading, spacing: 10) {
+                // Mini preview container
+                ZStack {
+                    if theme == .tactileDesk {
+                        tactileDeskMiniPreview
+                    } else {
+                        liquidGlassMiniPreview
+                    }
+                }
+                .frame(height: 78)
+                .frame(maxWidth: .infinity)
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .strokeBorder(
+                            isSelected
+                                ? (theme == .tactileDesk ? Theme.orange : LiquidGlass.accent)
+                                : (isHovered ? Color.white.opacity(0.3) : Color.white.opacity(0.12)),
+                            lineWidth: isSelected ? 2 : 1
+                        )
+                )
+
+                HStack(spacing: 8) {
+                    // Radio indicator
+                    ZStack {
+                        Circle()
+                            .strokeBorder(
+                                isSelected
+                                    ? (theme == .tactileDesk ? Theme.orange : LiquidGlass.accent)
+                                    : Color.secondary.opacity(0.5),
+                                lineWidth: 1.5
+                            )
+                            .frame(width: 15, height: 15)
+
+                        if isSelected {
+                            Circle()
+                                .fill(theme == .tactileDesk ? Theme.orange : LiquidGlass.accent)
+                                .frame(width: 7, height: 7)
+                        }
+                    }
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(theme.label)
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(.primary)
+
+                        Text(theme == .tactileDesk ? "Physical desk instrument · thermal roll & tactile keys" : "Apple native material · translucent optical glass & specular rim")
+                            .font(.system(size: 10.5))
+                            .foregroundColor(.secondary)
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+            .padding(10)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(isSelected ? (theme == .tactileDesk ? Color.white.opacity(0.06) : LiquidGlass.accent.opacity(0.08)) : Color.primary.opacity(0.02))
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
+        .frame(maxWidth: .infinity)
+    }
+
+    private var tactileDeskMiniPreview: some View {
+        ZStack {
+            LinearGradient(colors: [Theme.chassisTop, Theme.chassis], startPoint: .top, endPoint: .bottom)
+
+            VStack(spacing: 6) {
+                HStack(spacing: 6) {
+                    Circle().fill(Theme.amber).frame(width: 5, height: 5).shadow(color: Theme.amber, radius: 2)
+                    RoundedRectangle(cornerRadius: 3).fill(Theme.screen).frame(height: 12)
+                    Spacer()
+                }
+                .padding(.horizontal, 8)
+                .padding(.top, 6)
+
+                RoundedRectangle(cornerRadius: 3)
+                    .fill(Theme.paper)
+                    .overlay(
+                        VStack(alignment: .leading, spacing: 3) {
+                            RoundedRectangle(cornerRadius: 1).fill(Theme.ink).frame(width: 48, height: 4)
+                            RoundedRectangle(cornerRadius: 1).fill(Theme.inkFaded).frame(width: 32, height: 3)
+                        }
+                        .padding(.horizontal, 6),
+                        alignment: .leading
+                    )
+                    .frame(height: 28)
+                    .padding(.horizontal, 8)
+
+                HStack(spacing: 4) {
+                    RoundedRectangle(cornerRadius: 3).fill(Color(hex: 0x2E3135)).frame(width: 20, height: 10)
+                    RoundedRectangle(cornerRadius: 3).fill(Color(hex: 0x2E3135)).frame(width: 20, height: 10)
+                    Spacer()
+                }
+                .padding(.horizontal, 8)
+                .padding(.bottom, 6)
+            }
+        }
+    }
+
+    private var liquidGlassMiniPreview: some View {
+        ZStack {
+            LinearGradient(
+                colors: [Color.blue.opacity(0.25), Color.purple.opacity(0.18), Color.cyan.opacity(0.2)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(.ultraThinMaterial)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .strokeBorder(LiquidGlass.specularRimSubtle, lineWidth: 0.75)
+                )
+                .padding(6)
+
+            VStack(spacing: 5) {
+                HStack(spacing: 6) {
+                    Circle().fill(LiquidGlass.accent).frame(width: 5, height: 5).shadow(color: LiquidGlass.accent, radius: 2)
+                    Capsule().fill(.thinMaterial).frame(height: 10)
+                    Spacer()
+                }
+                .padding(.horizontal, 10)
+                .padding(.top, 8)
+
+                HStack(spacing: 4) {
+                    Capsule().fill(LiquidGlass.accent).frame(width: 24, height: 8)
+                    Capsule().fill(Color.primary.opacity(0.08)).frame(width: 20, height: 8)
+                    Spacer()
+                }
+                .padding(.horizontal, 10)
+
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(Color.primary.opacity(0.04))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 4)
+                            .strokeBorder(Color.white.opacity(0.15), lineWidth: 0.5)
+                    )
+                    .frame(height: 18)
+                    .padding(.horizontal, 10)
+                    .padding(.bottom, 6)
             }
         }
     }
@@ -233,6 +468,23 @@ struct GeneralPane: View {
 
     var body: some View {
         PaneScroll {
+            SettingsSection(title: "Theme & Appearance", footnote: "Choose between the physical desk instrument or Apple's native optical glass material.") {
+                HStack(spacing: 12) {
+                    ThemePreviewCard(
+                        theme: .tactileDesk,
+                        isSelected: settings.appTheme == .tactileDesk,
+                        onSelect: { settings.appTheme = .tactileDesk }
+                    )
+
+                    ThemePreviewCard(
+                        theme: .liquidGlass,
+                        isSelected: settings.appTheme == .liquidGlass,
+                        onSelect: { settings.appTheme = .liquidGlass }
+                    )
+                }
+                .padding(12)
+            }
+
             SettingsSection(title: "Shortcut") {
                 SettingsRow(title: "Open clipboard history",
                             detail: "Works in every app. Click the key, then press the new combination.",

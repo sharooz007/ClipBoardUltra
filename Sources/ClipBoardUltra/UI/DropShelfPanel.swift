@@ -1,5 +1,6 @@
 import Cocoa
 import SwiftUI
+import Combine
 
 /// Custom NSPanel hosting the Quick Drop Shelf.
 public final class DropShelfPanel: NSPanel {
@@ -8,6 +9,7 @@ public final class DropShelfPanel: NSPanel {
     public static let emptySize = NSSize(width: 260, height: 200)
     public static let filledSize = NSSize(width: 300, height: 320)
     private var dropHostingView: DropShelfHostingView?
+    private var themeCancellable: AnyCancellable?
 
     public override var canBecomeKey: Bool { true }
     public override var canBecomeMain: Bool { false }
@@ -30,7 +32,22 @@ public final class DropShelfPanel: NSPanel {
         hidesOnDeactivate = false
         becomesKeyOnlyIfNeeded = false
 
+        updateAppearance(for: SettingsStore.shared.appTheme)
+        themeCancellable = SettingsStore.shared.$appTheme
+            .sink { [weak self] theme in
+                self?.updateAppearance(for: theme)
+            }
+
         setupView()
+    }
+
+    private func updateAppearance(for theme: SettingsStore.AppTheme) {
+        switch theme {
+        case .liquidGlass:
+            self.appearance = nil
+        case .tactileDesk:
+            self.appearance = NSAppearance(named: .darkAqua)
+        }
     }
 
     private func setupView() {

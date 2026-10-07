@@ -91,10 +91,16 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
                 DropShelfManager.shared.clearAll()
             } else if lastLine == "settings-shelf" {
                 SettingsWindowController.shared.show(tab: .dropShelf)
+            } else if lastLine == "settings-general" {
+                SettingsWindowController.shared.show(tab: .general)
             } else if lastLine == "settings" {
                 SettingsWindowController.shared.show()
             } else if lastLine == "about" {
                 SettingsWindowController.shared.show(tab: .about)
+            } else if lastLine == "theme-liquid" {
+                SettingsStore.shared.appTheme = .liquidGlass
+            } else if lastLine == "theme-tactile" {
+                SettingsStore.shared.appTheme = .tactileDesk
             } else {
                 OverlayPanelManager.shared.toggle()
             }
