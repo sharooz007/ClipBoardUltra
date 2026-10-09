@@ -16,28 +16,34 @@ public struct DropShelfView: View {
             // Background Chassis
             if isLiquidGlass {
                 ZStack {
-                    VisualEffectBlur(material: .popover, blendingMode: .behindWindow)
-                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(.ultraThinMaterial)
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(Color(nsColor: .windowBackgroundColor).opacity(0.18))
-                    VStack {
-                        TopRoundedCorners(radius: 16)
-                            .fill(
-                                LinearGradient(
-                                    colors: [
-                                        Color.white.opacity(0.20),
-                                        Color.white.opacity(0.05),
-                                        Color.clear
-                                    ],
-                                    startPoint: .top,
-                                    endPoint: .bottom
+                    if SystemGlassObserver.shared.reduceTransparency {
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .fill(Color(nsColor: .windowBackgroundColor))
+                    } else {
+                        NativeGlassBackdrop(cornerRadius: 16, style: .regular)
+                            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .fill(.ultraThinMaterial)
+                            .opacity(0.18 + 0.60 * SystemGlassObserver.shared.glassTintAmount)
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .fill(Color(nsColor: .windowBackgroundColor).opacity(0.06 + 0.22 * SystemGlassObserver.shared.glassTintAmount))
+                        VStack {
+                            TopRoundedCorners(radius: 16)
+                                .fill(
+                                    LinearGradient(
+                                        colors: [
+                                            Color.white.opacity(0.20 - 0.08 * SystemGlassObserver.shared.glassTintAmount),
+                                            Color.white.opacity(0.04),
+                                            Color.clear
+                                        ],
+                                        startPoint: .top,
+                                        endPoint: .bottom
+                                    )
                                 )
-                            )
-                            .frame(height: 40)
-                            .allowsHitTesting(false)
-                        Spacer()
+                                .frame(height: 38)
+                                .allowsHitTesting(false)
+                            Spacer()
+                        }
                     }
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
                         .strokeBorder(
@@ -344,10 +350,11 @@ final class DragAllButtonNSView: NSView, NSDraggingSource {
         let bgPath = NSBezierPath(roundedRect: bounds, xRadius: cornerRadius, yRadius: cornerRadius)
 
         if isLiquidGlass {
-            // Apple System Blue fill with subtle specular highlight
+            // Dynamic system accent color fill with subtle specular highlight
+            let accentNS = NSColor.controlAccentColor
             let baseColor = isHighlighted
-                ? NSColor(red: 0.0, green: 0.44, blue: 0.92, alpha: 1.0)
-                : NSColor(red: 0.04, green: 0.52, blue: 1.0, alpha: 0.95)
+                ? accentNS.withAlphaComponent(1.0)
+                : accentNS.withAlphaComponent(0.92)
             baseColor.setFill()
             bgPath.fill()
 

@@ -78,8 +78,9 @@ public struct DetailPreviewView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .fill(.ultraThinMaterial)
+                    .opacity(0.18 + 0.60 * SystemGlassObserver.shared.glassTintAmount)
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(Color(nsColor: .controlBackgroundColor).opacity(0.12))
+                    .fill(Color(nsColor: .controlBackgroundColor).opacity(0.04 + 0.16 * SystemGlassObserver.shared.glassTintAmount))
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .strokeBorder(LiquidGlass.specularRimSubtle, lineWidth: 1)
             }

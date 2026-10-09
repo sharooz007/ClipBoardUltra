@@ -1,7 +1,119 @@
 import SwiftUI
 import Cocoa
+import Combine
 
-// MARK: - AppKit Visual Effect View for Behind-Window Blending
+// MARK: - System Glass & Appearance Observer
+
+/// Observes macOS system-wide appearance settings:
+/// 1. Liquid Glass transparency/diffusion slider (`NSGlassTintAmount` & `_NSGlassEffectDiffusionDidChangeNotification`)
+/// 2. System Accent Color (`NSColor.controlAccentColor` & `AppleColorPreferencesChangedNotification`)
+/// 3. Accessibility "Reduce Transparency" (`NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency`)
+public final class SystemGlassObserver: ObservableObject {
+    public static let shared = SystemGlassObserver()
+
+    /// 0.0 = maximum optical transparency (left of slider), 1.0 = heavy frosted tint (right of slider)
+    @Published public private(set) var glassTintAmount: CGFloat = 0.0
+    @Published public private(set) var accentColor: Color = Color(nsColor: .controlAccentColor)
+    @Published public private(set) var reduceTransparency: Bool = false
+
+    private var observers: [NSObjectProtocol] = []
+
+    private init() {
+        refreshSettings()
+        setupListeners()
+    }
+
+    public func refreshSettings() {
+        // Read system glass tint amount (0.0 to 1.0)
+        if let val = UserDefaults.standard.object(forKey: "NSGlassTintAmount") as? Double {
+            self.glassTintAmount = CGFloat(max(0.0, min(1.0, val)))
+        } else if let global = UserDefaults.standard.persistentDomain(forName: UserDefaults.globalDomain),
+                  let val = global["NSGlassTintAmount"] as? Double {
+            self.glassTintAmount = CGFloat(max(0.0, min(1.0, val)))
+        } else {
+            self.glassTintAmount = 0.0
+        }
+
+        self.accentColor = Color(nsColor: .controlAccentColor)
+        self.reduceTransparency = NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency
+    }
+
+    private func setupListeners() {
+        let center = NotificationCenter.default
+        let distCenter = DistributedNotificationCenter.default()
+
+        // 1. Diffusion / Glass slider changed
+        let notifName = NSNotification.Name("_NSGlassEffectDiffusionDidChangeNotification")
+        observers.append(center.addObserver(forName: notifName, object: nil, queue: .main) { [weak self] _ in
+            self?.refreshSettings()
+        })
+        observers.append(distCenter.addObserver(forName: notifName, object: nil, queue: .main) { [weak self] _ in
+            self?.refreshSettings()
+        })
+
+        // 2. Global preferences / user defaults changed
+        observers.append(center.addObserver(forName: UserDefaults.didChangeNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.refreshSettings()
+        })
+
+        // 3. System accent color changed
+        let colorPref = NSNotification.Name("AppleColorPreferencesChangedNotification")
+        observers.append(distCenter.addObserver(forName: colorPref, object: nil, queue: .main) { [weak self] _ in
+            self?.refreshSettings()
+        })
+
+        // 4. Reduce transparency changed
+        let reduceNotif = NSWorkspace.accessibilityDisplayOptionsDidChangeNotification
+        observers.append(NSWorkspace.shared.notificationCenter.addObserver(forName: reduceNotif, object: nil, queue: .main) { [weak self] _ in
+            self?.refreshSettings()
+        })
+    }
+}
+
+// MARK: - Native AppKit Glass & Visual Effect Views
+
+/// Renders authentic macOS Liquid Glass using AppKit's `NSGlassEffectView` on macOS 26.0+,
+/// with a graceful fallback to `NSVisualEffectView` on earlier macOS versions.
+public struct NativeGlassBackdrop: NSViewRepresentable {
+    public var cornerRadius: CGFloat
+    public var style: GlassStyle
+
+    public enum GlassStyle {
+        case regular
+        case clear
+    }
+
+    public init(cornerRadius: CGFloat = 18, style: GlassStyle = .regular) {
+        self.cornerRadius = cornerRadius
+        self.style = style
+    }
+
+    public func makeNSView(context: Context) -> NSView {
+        if #available(macOS 26.0, *) {
+            let glassView = NSGlassEffectView()
+            glassView.cornerRadius = cornerRadius
+            glassView.style = (style == .clear) ? .clear : .regular
+            glassView.autoresizingMask = [.width, .height]
+            return glassView
+        } else {
+            let visualEffect = NSVisualEffectView()
+            visualEffect.material = .popover
+            visualEffect.blendingMode = .behindWindow
+            visualEffect.state = .active
+            visualEffect.autoresizingMask = [.width, .height]
+            return visualEffect
+        }
+    }
+
+    public func updateNSView(_ nsView: NSView, context: Context) {
+        if #available(macOS 26.0, *) {
+            if let glassView = nsView as? NSGlassEffectView {
+                glassView.cornerRadius = cornerRadius
+                glassView.style = (style == .clear) ? .clear : .regular
+            }
+        }
+    }
+}
 
 /// Native AppKit NSVisualEffectView for hardware-accelerated optical blur behind window.
 public struct VisualEffectBlur: NSViewRepresentable {
@@ -38,9 +150,13 @@ public struct VisualEffectBlur: NSViewRepresentable {
 // MARK: - Liquid Glass Design System Tokens & Modifiers
 
 public enum LiquidGlass {
-    // Apple System Blue & Vibrant Accents
-    public static let accent = Color(hex: 0x0A84FF)
-    public static let accentGlow = Color(hex: 0x0A84FF).opacity(0.4)
+    // Dynamic System Accent Color (adapts to user's selected accent in System Settings)
+    public static var accent: Color {
+        SystemGlassObserver.shared.accentColor
+    }
+    public static var accentGlow: Color {
+        SystemGlassObserver.shared.accentColor.opacity(0.4)
+    }
     public static let glassTint = Color.white.opacity(0.06)
 
     // Specular Rim Gradient: Simulates light hitting the top-left edge of real glass
@@ -92,41 +208,58 @@ public struct TopRoundedCorners: Shape {
 }
 
 public struct LiquidGlassChassis: ViewModifier {
+    @ObservedObject private var observer = SystemGlassObserver.shared
     public var cornerRadius: CGFloat = 18
 
     public func body(content: Content) -> some View {
+        let tint = observer.glassTintAmount
+        let isReduced = observer.reduceTransparency
+
         content
             .background(
                 ZStack {
-                    // Optical behind-window material
-                    VisualEffectBlur(material: .popover, blendingMode: .behindWindow)
-                        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+                    if isReduced {
+                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                            .fill(Color(nsColor: .windowBackgroundColor))
+                    } else {
+                        // 1. Native Optical Glass Backdrop (OS-level liquid glass engine)
+                        NativeGlassBackdrop(cornerRadius: cornerRadius, style: .regular)
+                            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
 
-                    // Secondary ultra-thin diffusion layer
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .fill(.ultraThinMaterial)
+                        // 2. Secondary ultra-thin diffusion layer, modulated by system slider!
+                        // At tint = 0.0 (high transparency), this is 0.18 (crystal optical glass).
+                        // At tint = 1.0 (heavy tint), this is 0.78 (dense frosted glass).
+                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                            .fill(.ultraThinMaterial)
+                            .opacity(0.18 + 0.60 * tint)
 
-                    // Atmospheric ambient tint
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .fill(Color(nsColor: .windowBackgroundColor).opacity(0.28))
+                        // 3. Atmospheric ambient tint, scaled with system glass tint amount
+                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                            .fill(Color(nsColor: .windowBackgroundColor).opacity(0.06 + 0.22 * tint))
 
-                    // Overhead optical sheen reflection
-                    VStack {
-                        LinearGradient(
-                            colors: [Color.white.opacity(0.18), Color.white.opacity(0.02), Color.clear],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                        .frame(height: 38)
-                        .clipShape(TopRoundedCorners(radius: cornerRadius))
-                        Spacer()
+                        // 4. Overhead optical sheen reflection (refractive top highlight)
+                        VStack {
+                            LinearGradient(
+                                colors: [
+                                    Color.white.opacity(0.20 - 0.08 * tint),
+                                    Color.white.opacity(0.02),
+                                    Color.clear
+                                ],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                            .frame(height: 38)
+                            .clipShape(TopRoundedCorners(radius: cornerRadius))
+                            Spacer()
+                        }
+                        .allowsHitTesting(false)
                     }
 
-                    // Apple Signature Specular Rim Light Border
+                    // 5. Apple Signature Specular Rim Light Border
                     RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                         .strokeBorder(LiquidGlass.specularRim, lineWidth: 1)
                 }
-                .shadow(color: Color.black.opacity(0.35), radius: 28, x: 0, y: 14)
+                .shadow(color: Color.black.opacity(0.32), radius: 28, x: 0, y: 14)
             )
     }
 }
@@ -340,7 +473,7 @@ public struct GlassClipRowView: View {
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
                         .fill(
                             LinearGradient(
-                                colors: [LiquidGlass.accent, Color(hex: 0x0071E3)],
+                                colors: [LiquidGlass.accent, LiquidGlass.accent.opacity(0.85)],
                                 startPoint: .topLeading,
                                 endPoint: .bottomTrailing
                             )

@@ -101,6 +101,11 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
                 SettingsStore.shared.appTheme = .liquidGlass
             } else if lastLine == "theme-tactile" {
                 SettingsStore.shared.appTheme = .tactileDesk
+            } else if lastLine == "category-all" {
+                ClipboardManager.shared.selectedCategory = .all
+                if let first = ClipboardManager.shared.items.first {
+                    ClipboardManager.shared.selectItem(id: first.id)
+                }
             } else {
                 OverlayPanelManager.shared.toggle()
             }
