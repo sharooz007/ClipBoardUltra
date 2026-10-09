@@ -189,8 +189,8 @@ public struct DropShelfView: View {
 
     // MARK: - Filled State with Accumulated Items
     private var filledContent: some View {
-        VStack(spacing: 8) {
-            // Scrollable Items List
+        VStack(spacing: 0) {
+            // Scrollable Items List (Takes flexible height up to maximum when there are many items)
             ScrollView(.vertical, showsIndicators: true) {
                 LazyVStack(spacing: 4) {
                     ForEach(manager.items) { item in
@@ -201,13 +201,26 @@ public struct DropShelfView: View {
                 .padding(.top, 8)
                 .padding(.bottom, 4)
             }
+            .frame(maxHeight: manager.items.count > 3 ? 140 : CGFloat(manager.items.count * 40 + 12))
+
+            // Interactive Staging Space: fills all remaining space in the shelf
+            ShelfSpaceDragView(
+                items: manager.items,
+                isLiquidGlass: isLiquidGlass,
+                onSuccess: { droppedURLs in
+                    manager.removeItems(matching: droppedURLs)
+                }
+            )
+            .frame(minHeight: 40)
+            .frame(maxHeight: .infinity)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
 
             Divider()
                 .background(isLiquidGlass ? Color.primary.opacity(0.08) : Theme.chassisTop.opacity(0.6))
 
-            // Bottom Actions: Drag All Bar & Clear
-            HStack(spacing: 8) {
-                // Clear all button
+            // Clean Footer Bar
+            HStack {
                 if isLiquidGlass {
                     Button {
                         manager.clearAll()
@@ -223,59 +236,59 @@ public struct DropShelfView: View {
                             .font(Theme.mono(10, .medium))
                             .foregroundColor(Theme.boneDim)
                             .padding(.horizontal, 8)
-                            .padding(.vertical, 6)
+                            .padding(.vertical, 4)
                             .background(
-                                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                RoundedRectangle(cornerRadius: 5, style: .continuous)
                                     .fill(Theme.chassisLow)
                             )
                     }
                     .buttonStyle(.plain)
                 }
 
-                // Drag All Button (AppKit Native Drag Source)
-                DragAllSourceView(
-                    urls: manager.items.map { $0.url },
-                    title: "Drag All to Destination (\(manager.items.count))",
-                    isLiquidGlass: isLiquidGlass,
-                    onSuccess: { droppedURLs in
-                        manager.removeItems(matching: droppedURLs)
-                    }
-                )
-                .frame(height: 28)
+                Spacer()
+
+                Text("Drag card or space to drop")
+                    .font(isLiquidGlass ? .system(size: 10, weight: .medium) : Theme.mono(9, .regular))
+                    .foregroundColor(isLiquidGlass ? .secondary : Theme.boneDim.opacity(0.7))
             }
-            .padding(.horizontal, 10)
-            .padding(.bottom, 10)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
         }
     }
 
+    // MARK: - Item Row with Full Card Drag & Isolated Dismiss
     private func itemRow(_ item: DropShelfItem) -> some View {
         HStack(spacing: 8) {
-            Image(nsImage: item.icon)
-                .resizable()
-                .aspectRatio(contentMode: .fit)
-                .frame(width: 24, height: 24)
+            // Draggable Card Body (NSViewRepresentable overlay strictly over content)
+            ZStack {
+                HStack(spacing: 8) {
+                    Image(nsImage: item.icon)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 24, height: 24)
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(item.name)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(isLiquidGlass ? .primary : Theme.bone)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(item.name)
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(isLiquidGlass ? .primary : Theme.bone)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
 
-                Text(item.formattedSize)
-                    .font(isLiquidGlass ? .system(size: 9.5) : Theme.mono(9, .regular))
-                    .foregroundColor(isLiquidGlass ? .secondary : Theme.boneDim)
+                        Text(item.formattedSize)
+                            .font(isLiquidGlass ? .system(size: 9.5) : Theme.mono(9, .regular))
+                            .foregroundColor(isLiquidGlass ? .secondary : Theme.boneDim)
+                    }
+
+                    Spacer()
+                }
+
+                // Native Drag Interceptor covering card content
+                ItemCardDragSourceView(item: item) {
+                    manager.removeItem(id: item.id)
+                }
             }
 
-            Spacer()
-
-            // Individual drag handle
-            SingleItemDragSourceView(url: item.url) {
-                manager.removeItem(id: item.id)
-            }
-            .frame(width: 22, height: 22)
-
-            // Remove button
+            // Independent Dismiss Button (outside drag hit-testing bounds)
             Button {
                 manager.removeItem(id: item.id)
             } label: {
@@ -300,38 +313,33 @@ public struct DropShelfView: View {
     }
 }
 
-// MARK: - Native AppKit Drag Source for Dragging All Items Out
-struct DragAllSourceView: NSViewRepresentable {
-    var urls: [URL]
-    var title: String
-    var isLiquidGlass: Bool = false
-    var onSuccess: ([URL]) -> Void
+// MARK: - Native AppKit Drag Source for Single Item
+struct ItemCardDragSourceView: NSViewRepresentable {
+    var item: DropShelfItem
+    var onSuccess: () -> Void
 
-    func makeNSView(context: Context) -> DragAllButtonNSView {
-        let view = DragAllButtonNSView()
-        view.urls = urls
-        view.title = title
-        view.isLiquidGlass = isLiquidGlass
+    func makeNSView(context: Context) -> ItemCardDragNSView {
+        let view = ItemCardDragNSView()
+        view.item = item
         view.onSuccess = onSuccess
         return view
     }
 
-    func updateNSView(_ nsView: DragAllButtonNSView, context: Context) {
-        nsView.urls = urls
-        nsView.title = title
-        nsView.isLiquidGlass = isLiquidGlass
+    func updateNSView(_ nsView: ItemCardDragNSView, context: Context) {
+        nsView.item = item
         nsView.onSuccess = onSuccess
-        nsView.needsDisplay = true
     }
 }
 
-final class DragAllButtonNSView: NSView, NSDraggingSource {
-    var urls: [URL] = []
-    var title: String = ""
-    var isLiquidGlass: Bool = false
-    var onSuccess: (([URL]) -> Void)?
+final class ItemCardDragNSView: NSView, NSDraggingSource {
+    var item: DropShelfItem?
+    var onSuccess: (() -> Void)?
 
-    private var isHighlighted: Bool = false
+    private var initialMouseDownLocation: NSPoint?
+    private var isDragging = false
+
+    // CRITICAL: Block window move hijacking
+    override var mouseDownCanMoveWindow: Bool { false }
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -343,102 +351,316 @@ final class DragAllButtonNSView: NSView, NSDraggingSource {
         wantsLayer = true
     }
 
-    override func draw(_ dirtyRect: NSRect) {
-        super.draw(dirtyRect)
+    override func mouseDown(with event: NSEvent) {
+        initialMouseDownLocation = event.locationInWindow
+        isDragging = false
+    }
 
-        let cornerRadius: CGFloat = isLiquidGlass ? 8.0 : 6.0
-        let bgPath = NSBezierPath(roundedRect: bounds, xRadius: cornerRadius, yRadius: cornerRadius)
+    override func mouseDragged(with event: NSEvent) {
+        guard !isDragging, let initial = initialMouseDownLocation, let item = item else { return }
+        let current = event.locationInWindow
+        guard hypot(current.x - initial.x, current.y - initial.y) >= 3.0 else { return }
 
-        if isLiquidGlass {
-            // Dynamic system accent color fill with subtle specular highlight
-            let accentNS = NSColor.controlAccentColor
-            let baseColor = isHighlighted
-                ? accentNS.withAlphaComponent(1.0)
-                : accentNS.withAlphaComponent(0.92)
-            baseColor.setFill()
-            bgPath.fill()
+        // Fast disk validation
+        guard FileManager.default.fileExists(atPath: item.url.path) else {
+            NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+            DropShelfManager.shared.removeItem(id: item.id)
+            initialMouseDownLocation = nil
+            return
+        }
 
-            // Specular rim border
-            NSColor(white: 1.0, alpha: 0.3).setStroke()
-            bgPath.lineWidth = 1.0
-            bgPath.stroke()
+        isDragging = true
+        DropShelfManager.shared.incrementDragSession()
 
-            // Text & Icon
-            let paragraph = NSMutableParagraphStyle()
-            paragraph.alignment = .center
+        let dragItem = NSDraggingItem(pasteboardWriter: item.url as NSURL)
+        let mouseInView = convert(event.locationInWindow, from: nil)
+        let iconRect = NSRect(x: mouseInView.x - 12, y: mouseInView.y - 12, width: 24, height: 24)
+        dragItem.setDraggingFrame(iconRect, contents: item.icon)
 
-            let attrs: [NSAttributedString.Key: Any] = [
-                .font: NSFont.systemFont(ofSize: 11, weight: .semibold),
-                .foregroundColor: NSColor.white,
-                .paragraphStyle: paragraph
-            ]
+        let session = beginDraggingSession(with: [dragItem], event: event, source: self)
+        session.animatesToStartingPositionsOnCancelOrFail = true
+    }
 
-            let fullText = "⇥  \(title)"
-            let str = NSAttributedString(string: fullText, attributes: attrs)
-            let strSize = str.size()
-            let textRect = NSRect(
-                x: 0,
-                y: (bounds.height - strSize.height) / 2 - 0.5,
-                width: bounds.width,
-                height: strSize.height
-            )
-            str.draw(in: textRect)
-        } else {
-            // Safety-orange background
-            let baseColor = isHighlighted ? NSColor(red: 1.0, green: 0.45, blue: 0.1, alpha: 1.0) : NSColor(red: 0.95, green: 0.38, blue: 0.08, alpha: 1.0)
-            baseColor.setFill()
-            bgPath.fill()
+    override func mouseUp(with event: NSEvent) {
+        // Double-click reveals file in Finder
+        if !isDragging && event.clickCount == 2, let url = item?.url {
+            NSWorkspace.shared.activateFileViewerSelecting([url])
+        }
+        initialMouseDownLocation = nil
+        isDragging = false
+    }
 
-            // Border
-            NSColor(white: 1.0, alpha: 0.15).setStroke()
-            bgPath.lineWidth = 1.0
-            bgPath.stroke()
-
-            // Text & Icon
-            let paragraph = NSMutableParagraphStyle()
-            paragraph.alignment = .center
-
-            let attrs: [NSAttributedString.Key: Any] = [
-                .font: NSFont.monospacedSystemFont(ofSize: 10, weight: .bold),
-                .foregroundColor: NSColor.white,
-                .paragraphStyle: paragraph
-            ]
-
-            let fullText = "⇥ \(title)"
-            let str = NSAttributedString(string: fullText, attributes: attrs)
-            let strSize = str.size()
-            let textRect = NSRect(
-                x: 0,
-                y: (bounds.height - strSize.height) / 2 - 1,
-                width: bounds.width,
-                height: strSize.height
-            )
-            str.draw(in: textRect)
+    func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
+        switch context {
+        case .outsideApplication:
+            return [.copy, .generic]
+        case .withinApplication:
+            return [] // Prevent self-drop deletion
+        @unknown default:
+            return [.copy]
         }
     }
 
+    func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) {
+        DropShelfManager.shared.decrementDragSession()
+        if operation != [] {
+            if Thread.isMainThread {
+                self.onSuccess?()
+            } else {
+                DispatchQueue.main.async { self.onSuccess?() }
+            }
+        }
+        isDragging = false
+        initialMouseDownLocation = nil
+    }
+}
+
+// MARK: - Native Staging Cradle Drag Source (Source Only, No Destination Conflict)
+struct ShelfSpaceDragView: NSViewRepresentable {
+    var items: [DropShelfItem]
+    var isLiquidGlass: Bool
+    var onSuccess: ([URL]) -> Void
+
+    func makeNSView(context: Context) -> ShelfSpaceDragNSView {
+        let view = ShelfSpaceDragNSView()
+        view.configure(items: items, isLiquidGlass: isLiquidGlass, onSuccess: onSuccess)
+        return view
+    }
+
+    func updateNSView(_ nsView: ShelfSpaceDragNSView, context: Context) {
+        nsView.configure(items: items, isLiquidGlass: isLiquidGlass, onSuccess: onSuccess)
+        nsView.needsDisplay = true
+    }
+}
+
+final class ShelfSpaceDragNSView: NSView, NSDraggingSource {
+    private var items: [DropShelfItem] = []
+    private var activeDragURLs: [URL] = []
+    private var isLiquidGlass: Bool = false
+    private var onSuccess: (([URL]) -> Void)?
+    private var isHighlighted: Bool = false
+    private var mouseDownPoint: NSPoint?
+
+    // CRITICAL: Block window move hijacking
+    override var mouseDownCanMoveWindow: Bool { false }
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        wantsLayer = true
+    }
+
+    func configure(items: [DropShelfItem], isLiquidGlass: Bool, onSuccess: @escaping ([URL]) -> Void) {
+        self.items = items
+        self.isLiquidGlass = isLiquidGlass
+        self.onSuccess = onSuccess
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        guard !items.isEmpty else { return }
+
+        let cornerRadius: CGFloat = isLiquidGlass ? 10.0 : 8.0
+        let path = NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: cornerRadius, yRadius: cornerRadius)
+        let isTall = bounds.height >= 65.0
+
+        if isLiquidGlass {
+            let accent = NSColor.controlAccentColor
+            let bg = isHighlighted ? accent.withAlphaComponent(0.18) : accent.withAlphaComponent(0.06)
+            bg.setFill()
+            path.fill()
+
+            let strokeColor = isHighlighted ? accent : NSColor.white.withAlphaComponent(0.20)
+            strokeColor.setStroke()
+            let pattern: [CGFloat] = [4, 4]
+            path.setLineDash(pattern, count: 2, phase: 0)
+            path.lineWidth = 1.0
+            path.stroke()
+
+            if isTall {
+                drawTallContent(
+                    title: "Drag from space to move all (\(items.count))",
+                    subtitle: "or drop more files here",
+                    accent: accent,
+                    isHighlighted: isHighlighted
+                )
+            } else {
+                drawLabel("⇥  Drag space to move all (\(items.count))", color: isHighlighted ? .white : accent, font: .systemFont(ofSize: 10.5, weight: .semibold))
+            }
+        } else {
+            let bg = isHighlighted ? NSColor(calibratedRed: 0.16, green: 0.17, blue: 0.19, alpha: 1.0) : NSColor(calibratedRed: 0.08, green: 0.09, blue: 0.10, alpha: 1.0)
+            bg.setFill()
+            path.fill()
+
+            let strokeColor = isHighlighted ? NSColor(calibratedRed: 1.0, green: 0.71, blue: 0.28, alpha: 0.9) : NSColor.white.withAlphaComponent(0.12)
+            strokeColor.setStroke()
+            let pattern: [CGFloat] = [3, 3]
+            path.setLineDash(pattern, count: 2, phase: 0)
+            path.lineWidth = 1.0
+            path.stroke()
+
+            if isTall {
+                drawTallContentTactile(
+                    title: "DRAG FROM SPACE TO MOVE ALL (\(items.count))",
+                    subtitle: "OR DROP MORE FILES HERE",
+                    isHighlighted: isHighlighted
+                )
+            } else {
+                let labelColor = isHighlighted ? NSColor(calibratedRed: 1.0, green: 0.71, blue: 0.28, alpha: 1.0) : NSColor(calibratedRed: 0.89, green: 0.88, blue: 0.84, alpha: 1.0)
+                drawLabel("⇥ DRAG SPACE TO MOVE ALL (\(items.count))", color: labelColor, font: .monospacedSystemFont(ofSize: 9.5, weight: .bold))
+            }
+        }
+    }
+
+    private func drawTallContent(title: String, subtitle: String, accent: NSColor, isHighlighted: Bool) {
+        let titlePara = NSMutableParagraphStyle()
+        titlePara.alignment = .center
+
+        let titleAttrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 11, weight: .semibold),
+            .foregroundColor: isHighlighted ? NSColor.white : accent,
+            .paragraphStyle: titlePara
+        ]
+        let titleStr = NSAttributedString(string: title, attributes: titleAttrs)
+        let titleSize = titleStr.size()
+
+        let subPara = NSMutableParagraphStyle()
+        subPara.alignment = .center
+        let subAttrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 9.5, weight: .regular),
+            .foregroundColor: NSColor.secondaryLabelColor,
+            .paragraphStyle: subPara
+        ]
+        let subStr = NSAttributedString(string: subtitle, attributes: subAttrs)
+        let subSize = subStr.size()
+
+        let iconConfig = NSImage.SymbolConfiguration(pointSize: 18, weight: .medium)
+        let icon = NSImage(systemSymbolName: "hand.draw", accessibilityDescription: nil)?
+            .withSymbolConfiguration(iconConfig)
+
+        let iconHeight: CGFloat = 20
+        let spacing: CGFloat = 5
+        let totalContentHeight = iconHeight + spacing + titleSize.height + spacing + subSize.height
+
+        var currentY = bounds.midY + totalContentHeight / 2 - iconHeight
+
+        if let icon = icon {
+            let iconWidth: CGFloat = 20
+            let iconRect = NSRect(x: bounds.midX - iconWidth / 2, y: currentY, width: iconWidth, height: iconHeight)
+            let tintColor = isHighlighted ? NSColor.white : accent
+            tintColor.set()
+            icon.draw(in: iconRect)
+        }
+
+        currentY -= (spacing + titleSize.height)
+        let titleRect = NSRect(x: 8, y: currentY, width: bounds.width - 16, height: titleSize.height)
+        titleStr.draw(in: titleRect)
+
+        currentY -= (spacing + subSize.height)
+        let subRect = NSRect(x: 8, y: currentY, width: bounds.width - 16, height: subSize.height)
+        subStr.draw(in: subRect)
+    }
+
+    private func drawTallContentTactile(title: String, subtitle: String, isHighlighted: Bool) {
+        let titlePara = NSMutableParagraphStyle()
+        titlePara.alignment = .center
+
+        let amber = NSColor(calibratedRed: 1.0, green: 0.71, blue: 0.28, alpha: 1.0)
+        let titleAttrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.monospacedSystemFont(ofSize: 10, weight: .bold),
+            .foregroundColor: isHighlighted ? amber : NSColor(calibratedRed: 0.89, green: 0.88, blue: 0.84, alpha: 1.0),
+            .paragraphStyle: titlePara
+        ]
+        let titleStr = NSAttributedString(string: title, attributes: titleAttrs)
+        let titleSize = titleStr.size()
+
+        let subPara = NSMutableParagraphStyle()
+        subPara.alignment = .center
+        let subAttrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.monospacedSystemFont(ofSize: 8.5, weight: .regular),
+            .foregroundColor: NSColor(calibratedRed: 0.55, green: 0.55, blue: 0.55, alpha: 1.0),
+            .paragraphStyle: subPara
+        ]
+        let subStr = NSAttributedString(string: subtitle, attributes: subAttrs)
+        let subSize = subStr.size()
+
+        let iconConfig = NSImage.SymbolConfiguration(pointSize: 16, weight: .medium)
+        let icon = NSImage(systemSymbolName: "hand.draw", accessibilityDescription: nil)?
+            .withSymbolConfiguration(iconConfig)
+
+        let iconHeight: CGFloat = 18
+        let spacing: CGFloat = 5
+        let totalContentHeight = iconHeight + spacing + titleSize.height + spacing + subSize.height
+
+        var currentY = bounds.midY + totalContentHeight / 2 - iconHeight
+
+        if let icon = icon {
+            let iconWidth: CGFloat = 18
+            let iconRect = NSRect(x: bounds.midX - iconWidth / 2, y: currentY, width: iconWidth, height: iconHeight)
+            let tintColor = isHighlighted ? amber : NSColor(calibratedRed: 0.7, green: 0.7, blue: 0.7, alpha: 1.0)
+            tintColor.set()
+            icon.draw(in: iconRect)
+        }
+
+        currentY -= (spacing + titleSize.height)
+        let titleRect = NSRect(x: 8, y: currentY, width: bounds.width - 16, height: titleSize.height)
+        titleStr.draw(in: titleRect)
+
+        currentY -= (spacing + subSize.height)
+        let subRect = NSRect(x: 8, y: currentY, width: bounds.width - 16, height: subSize.height)
+        subStr.draw(in: subRect)
+    }
+
+    private func drawLabel(_ text: String, color: NSColor, font: NSFont) {
+        let para = NSMutableParagraphStyle()
+        para.alignment = .center
+        let str = NSAttributedString(string: text, attributes: [.font: font, .foregroundColor: color, .paragraphStyle: para])
+        let size = str.size()
+        let rect = NSRect(x: 0, y: (bounds.height - size.height) / 2, width: bounds.width, height: size.height)
+        str.draw(in: rect)
+    }
+
     override func mouseDown(with event: NSEvent) {
+        mouseDownPoint = convert(event.locationInWindow, from: nil)
         isHighlighted = true
         needsDisplay = true
     }
 
     override func mouseUp(with event: NSEvent) {
+        mouseDownPoint = nil
         isHighlighted = false
         needsDisplay = true
     }
 
     override func mouseDragged(with event: NSEvent) {
-        guard !urls.isEmpty else { return }
+        guard let start = mouseDownPoint, !items.isEmpty else { return }
+        let current = convert(event.locationInWindow, from: nil)
+        guard hypot(current.x - start.x, current.y - start.y) >= 3.0 else { return }
+
         isHighlighted = false
         needsDisplay = true
+        mouseDownPoint = nil
 
+        // Freeze URLs to avoid deletion of files added mid-drag
+        let validItems = items.filter { FileManager.default.fileExists(atPath: $0.url.path) }
+        guard !validItems.isEmpty else { return }
+        self.activeDragURLs = validItems.map { $0.url }
+
+        DropShelfManager.shared.incrementDragSession()
+
+        let mouseInView = convert(event.locationInWindow, from: nil)
         var draggingItems: [NSDraggingItem] = []
-        for url in urls {
-            let item = NSDraggingItem(pasteboardWriter: url as NSURL)
-            let icon = NSWorkspace.shared.icon(forFile: url.path)
-            let iconRect = NSRect(x: bounds.midX - 16, y: bounds.midY - 16, width: 32, height: 32)
-            item.setDraggingFrame(iconRect, contents: icon)
-            draggingItems.append(item)
+        for (idx, item) in validItems.enumerated() {
+            let dragItem = NSDraggingItem(pasteboardWriter: item.url as NSURL)
+            // Stagger up to 4 items in compact stack
+            let offset = CGFloat(min(idx, 4)) * 3.0
+            let iconRect = NSRect(x: mouseInView.x - 16 + offset, y: mouseInView.y - 16 - offset, width: 32, height: 32)
+            dragItem.setDraggingFrame(iconRect, contents: item.icon)
+            draggingItems.append(dragItem)
         }
 
         let session = beginDraggingSession(with: draggingItems, event: event, source: self)
@@ -446,90 +668,24 @@ final class DragAllButtonNSView: NSView, NSDraggingSource {
     }
 
     func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
-        return [.copy, .move, .generic]
-    }
-
-    func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) {
-        if operation != [] {
-            DispatchQueue.main.async {
-                self.onSuccess?(self.urls)
-            }
-        }
-    }
-}
-
-// MARK: - Native Drag Source for Individual Item
-struct SingleItemDragSourceView: NSViewRepresentable {
-    var url: URL
-    var onSuccess: () -> Void
-
-    func makeNSView(context: Context) -> SingleItemDragNSView {
-        let view = SingleItemDragNSView()
-        view.url = url
-        view.onSuccess = onSuccess
-        return view
-    }
-
-    func updateNSView(_ nsView: SingleItemDragNSView, context: Context) {
-        nsView.url = url
-        nsView.onSuccess = onSuccess
-    }
-}
-
-final class SingleItemDragNSView: NSView, NSDraggingSource {
-    var url: URL?
-    var onSuccess: (() -> Void)?
-
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        wantsLayer = true
-    }
-
-    required init?(coder: NSCoder) {
-        super.init(coder: coder)
-        wantsLayer = true
-    }
-
-    override func draw(_ dirtyRect: NSRect) {
-        super.draw(dirtyRect)
-
-        // Draw small grab handle icon (three horizontal dots or grip)
-        let handleColor = NSColor(white: 0.6, alpha: 0.8)
-        handleColor.setFill()
-
-        let dotSize: CGFloat = 3.0
-        let spacing: CGFloat = 2.5
-        let startY = (bounds.height - (dotSize * 3 + spacing * 2)) / 2
-        let startX = (bounds.width - dotSize) / 2
-
-        for i in 0..<3 {
-            let y = startY + CGFloat(i) * (dotSize + spacing)
-            let rect = NSRect(x: startX, y: y, width: dotSize, height: dotSize)
-            NSBezierPath(ovalIn: rect).fill()
+        switch context {
+        case .outsideApplication:
+            return [.copy, .generic]
+        case .withinApplication:
+            return [] // Disallow self-drop
+        @unknown default:
+            return [.copy]
         }
     }
 
-    override func mouseDragged(with event: NSEvent) {
-        guard let url = url else { return }
-
-        let item = NSDraggingItem(pasteboardWriter: url as NSURL)
-        let icon = NSWorkspace.shared.icon(forFile: url.path)
-        let iconRect = NSRect(x: bounds.midX - 16, y: bounds.midY - 16, width: 32, height: 32)
-        item.setDraggingFrame(iconRect, contents: icon)
-
-        let session = beginDraggingSession(with: [item], event: event, source: self)
-        session.animatesToStartingPositionsOnCancelOrFail = true
-    }
-
-    func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
-        return [.copy, .move, .generic]
-    }
-
     func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) {
-        if operation != [] {
-            DispatchQueue.main.async {
-                self.onSuccess?()
-            }
+        DropShelfManager.shared.decrementDragSession()
+        guard operation != [] else { return }
+        let dropped = self.activeDragURLs
+        if Thread.isMainThread {
+            self.onSuccess?(dropped)
+        } else {
+            DispatchQueue.main.async { self.onSuccess?(dropped) }
         }
     }
 }

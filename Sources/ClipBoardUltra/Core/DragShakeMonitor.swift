@@ -56,6 +56,7 @@ public final class DragShakeMonitor {
 
         guard event.type == .leftMouseDragged else { return }
         guard SettingsStore.shared.dropShelfEnabled && SettingsStore.shared.dropShelfShakeToSummon else { return }
+        guard DropShelfManager.shared.activeDragSessionCount == 0 else { return }
 
         let now = CACurrentMediaTime()
         let mousePoint = NSEvent.mouseLocation

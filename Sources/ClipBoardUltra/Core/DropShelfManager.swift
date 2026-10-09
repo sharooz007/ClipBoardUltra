@@ -5,15 +5,39 @@ import Combine
 public final class DropShelfManager: ObservableObject {
     public static let shared = DropShelfManager()
 
+    // Active dragging session counter (prevents shake summoning & premature dismissal)
+    @Published public private(set) var activeDragSessionCount: Int = 0
+
+    public func incrementDragSession() {
+        if Thread.isMainThread {
+            activeDragSessionCount += 1
+        } else {
+            DispatchQueue.main.async { self.activeDragSessionCount += 1 }
+        }
+    }
+
+    public func decrementDragSession() {
+        if Thread.isMainThread {
+            activeDragSessionCount = max(0, activeDragSessionCount - 1)
+        } else {
+            DispatchQueue.main.async { self.activeDragSessionCount = max(0, self.activeDragSessionCount - 1) }
+        }
+    }
+
     @Published public private(set) var items: [DropShelfItem] = [] {
         didSet {
             let hasItems = !items.isEmpty
             if hasItems != (!oldValue.isEmpty) {
-                if Thread.isMainThread {
-                    DropShelfPanel.shared.updateSize(hasItems: hasItems)
-                } else {
-                    DispatchQueue.main.async {
+                // If items became empty and autoDismiss is enabled, skip updateSize resize animation
+                // to prevent collision with DropShelfPanel.hide()
+                let willAutoDismiss = !hasItems && SettingsStore.shared.dropShelfAutoDismiss
+                if !willAutoDismiss {
+                    if Thread.isMainThread {
                         DropShelfPanel.shared.updateSize(hasItems: hasItems)
+                    } else {
+                        DispatchQueue.main.async {
+                            DropShelfPanel.shared.updateSize(hasItems: hasItems)
+                        }
                     }
                 }
             }
