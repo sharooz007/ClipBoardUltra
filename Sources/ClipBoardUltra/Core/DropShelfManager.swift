@@ -1,65 +1,91 @@
 import Cocoa
 import Combine
 
-/// Manages the state and operations for the Quick Drop Shelf.
+/// Manages multi-folder state and operations for the Quick Drop Shelf.
 public final class DropShelfManager: ObservableObject {
     public static let shared = DropShelfManager()
+
+    /// Maximum number of active folder stacks supported on the shelf.
+    public static let maxFolders: Int = 4
 
     // Active dragging session counter (prevents shake summoning & premature dismissal)
     @Published public private(set) var activeDragSessionCount: Int = 0
 
     public func incrementDragSession() {
-        if Thread.isMainThread {
-            activeDragSessionCount += 1
-        } else {
-            DispatchQueue.main.async { self.activeDragSessionCount += 1 }
-        }
+        runOnMain { self.activeDragSessionCount += 1 }
     }
 
     public func decrementDragSession() {
-        if Thread.isMainThread {
-            activeDragSessionCount = max(0, activeDragSessionCount - 1)
-        } else {
-            DispatchQueue.main.async { self.activeDragSessionCount = max(0, self.activeDragSessionCount - 1) }
-        }
+        runOnMain { self.activeDragSessionCount = max(0, self.activeDragSessionCount - 1) }
     }
 
-    @Published public private(set) var items: [DropShelfItem] = [] {
+    /// Active folder stacks (maximum 4).
+    @Published public private(set) var folders: [DropShelfFolder] = [] {
         didSet {
-            let hasItems = !items.isEmpty
-            if hasItems != (!oldValue.isEmpty) {
-                // If items became empty and autoDismiss is enabled, skip updateSize resize animation
-                // to prevent collision with DropShelfPanel.hide()
-                let willAutoDismiss = !hasItems && SettingsStore.shared.dropShelfAutoDismiss
-                if !willAutoDismiss {
-                    if Thread.isMainThread {
-                        DropShelfPanel.shared.updateSize(hasItems: hasItems)
-                    } else {
-                        DispatchQueue.main.async {
-                            DropShelfPanel.shared.updateSize(hasItems: hasItems)
-                        }
-                    }
+            let hasFolders = !folders.isEmpty
+            let hadFolders = !oldValue.isEmpty
+            let willAutoDismiss = !hasFolders && SettingsStore.shared.dropShelfAutoDismiss
+
+            if !willAutoDismiss && (folders.count != oldValue.count || hasFolders != hadFolders) {
+                runOnMain {
+                    DropShelfPanel.shared.updateSize(folderCount: self.folders.count)
                 }
             }
         }
     }
+
+    /// Backward-compatibility: flattened array of all items across all active folders.
+    public var items: [DropShelfItem] {
+        folders.flatMap { $0.items }
+    }
+
+    /// Tracks which folder column (or New Folder slot) is currently hovered during incoming drag.
+    /// `0 ..< folders.count`: Existing folder index
+    /// `folders.count`: "+ New Folder" slot
+    /// `nil`: No column hovered
+    @Published public var hoveredFolderIndex: Int? = nil
+
+    /// Backward compatibility flag for overall drop shelf highlight
     @Published public var isTargetHighlighted: Bool = false
+
     @Published public private(set) var isVisible: Bool = false
 
     private init() {}
 
-    /// Adds one or more file URLs to the shelf. Ignores duplicates.
-    public func addFiles(_ urls: [URL]) {
+    private func runOnMain(_ block: @escaping () -> Void) {
+        if Thread.isMainThread {
+            block()
+        } else {
+            DispatchQueue.main.async(execute: block)
+        }
+    }
+
+    /// Adds one or more file URLs to a specific folder index or a new folder. Ignores duplicates within the folder.
+    public func addFiles(_ urls: [URL], toFolderIndex: Int? = nil) {
         let validURLs = urls.filter { $0.isFileURL && FileManager.default.fileExists(atPath: $0.path) }
         guard !validURLs.isEmpty else { return }
 
-        DispatchQueue.main.async { [weak self] in
+        runOnMain { [weak self] in
             guard let self = self else { return }
             var addedCount = 0
-            for url in validURLs {
-                if !self.items.contains(where: { $0.url.standardizedFileURL == url.standardizedFileURL }) {
-                    self.items.append(DropShelfItem(url: url))
-                    addedCount += 1
+
+            // Determine target folder index
+            let isNewFolderTarget = (toFolderIndex == self.folders.count) || (toFolderIndex == nil && self.folders.isEmpty)
+
+            if isNewFolderTarget && self.folders.count < Self.maxFolders {
+                // Create a new folder
+                let folderNumber = self.folders.count + 1
+                let folderName = "Folder \(folderNumber)"
+                let newItems = validURLs.map { DropShelfItem(url: $0) }
+                self.folders.append(DropShelfFolder(name: folderName, items: newItems))
+                addedCount += newItems.count
+            } else if !self.folders.isEmpty {
+                let targetIdx = min(max(0, toFolderIndex ?? 0), self.folders.count - 1)
+                for url in validURLs {
+                    if !self.folders[targetIdx].items.contains(where: { $0.url.standardizedFileURL == url.standardizedFileURL }) {
+                        self.folders[targetIdx].items.append(DropShelfItem(url: url))
+                        addedCount += 1
+                    }
                 }
             }
 
@@ -72,42 +98,103 @@ public final class DropShelfManager: ObservableObject {
         }
     }
 
-    /// Removes an item by its UUID.
-    public func removeItem(id: UUID) {
-        DispatchQueue.main.async { [weak self] in
+    /// Renames a folder.
+    public func renameFolder(id: UUID, newName: String) {
+        runOnMain { [weak self] in
             guard let self = self else { return }
-            self.items.removeAll { $0.id == id }
+            if let idx = self.folders.firstIndex(where: { $0.id == id }) {
+                let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmed.isEmpty {
+                    self.folders[idx].name = trimmed
+                }
+            }
+        }
+    }
+
+    /// Removes an item by UUID from a specific folder.
+    public func removeItem(id: UUID, fromFolderId: UUID) {
+        runOnMain { [weak self] in
+            guard let self = self else { return }
+            if let folderIdx = self.folders.firstIndex(where: { $0.id == fromFolderId }) {
+                self.folders[folderIdx].items.removeAll { $0.id == id }
+                if self.folders[folderIdx].items.isEmpty {
+                    self.folders.remove(at: folderIdx)
+                }
+            }
             self.checkAutoDismiss()
         }
     }
 
-    /// Removes items that were successfully dragged out to another destination.
-    public func removeItems(matching urls: [URL]) {
-        DispatchQueue.main.async { [weak self] in
+    /// Backward compatibility: removes an item by UUID across whichever folder contains it.
+    public func removeItem(id: UUID) {
+        runOnMain { [weak self] in
+            guard let self = self else { return }
+            for folderIdx in self.folders.indices.reversed() {
+                self.folders[folderIdx].items.removeAll { $0.id == id }
+                if self.folders[folderIdx].items.isEmpty {
+                    self.folders.remove(at: folderIdx)
+                }
+            }
+            self.checkAutoDismiss()
+        }
+    }
+
+    /// Removes items that were successfully dragged out of a folder.
+    public func removeItems(matching urls: [URL], fromFolderId: UUID) {
+        runOnMain { [weak self] in
             guard let self = self else { return }
             let normalized = Set(urls.map { $0.standardizedFileURL.path })
-            self.items.removeAll { normalized.contains($0.url.standardizedFileURL.path) }
+            if let folderIdx = self.folders.firstIndex(where: { $0.id == fromFolderId }) {
+                self.folders[folderIdx].items.removeAll { normalized.contains($0.url.standardizedFileURL.path) }
+                if self.folders[folderIdx].items.isEmpty {
+                    self.folders.remove(at: folderIdx)
+                }
+            }
             self.checkAutoDismiss()
         }
     }
 
-    /// Clears all files in the shelf and dismisses if configured.
-    public func clearAll() {
-        DispatchQueue.main.async { [weak self] in
+    /// Backward compatibility: removes items across all folders matching URLs.
+    public func removeItems(matching urls: [URL]) {
+        runOnMain { [weak self] in
             guard let self = self else { return }
-            self.items.removeAll()
+            let normalized = Set(urls.map { $0.standardizedFileURL.path })
+            for folderIdx in self.folders.indices.reversed() {
+                self.folders[folderIdx].items.removeAll { normalized.contains($0.url.standardizedFileURL.path) }
+                if self.folders[folderIdx].items.isEmpty {
+                    self.folders.remove(at: folderIdx)
+                }
+            }
+            self.checkAutoDismiss()
+        }
+    }
+
+    /// Removes an entire folder by its UUID.
+    public func removeFolder(id: UUID) {
+        runOnMain { [weak self] in
+            guard let self = self else { return }
+            self.folders.removeAll { $0.id == id }
+            self.checkAutoDismiss()
+        }
+    }
+
+    /// Clears all files in all folders.
+    public func clearAll() {
+        runOnMain { [weak self] in
+            guard let self = self else { return }
+            self.folders.removeAll()
             self.checkAutoDismiss()
         }
     }
 
     private func checkAutoDismiss() {
-        if items.isEmpty && SettingsStore.shared.dropShelfAutoDismiss {
+        if folders.isEmpty && SettingsStore.shared.dropShelfAutoDismiss {
             dismiss()
         }
     }
 
     public func show(near point: NSPoint? = nil) {
-        DispatchQueue.main.async { [weak self] in
+        runOnMain { [weak self] in
             guard let self = self else { return }
             self.isVisible = true
             DropShelfPanel.shared.show(near: point)
@@ -115,7 +202,7 @@ public final class DropShelfManager: ObservableObject {
     }
 
     public func dismiss() {
-        DispatchQueue.main.async { [weak self] in
+        runOnMain { [weak self] in
             guard let self = self else { return }
             self.isVisible = false
             DropShelfPanel.shared.hide()
@@ -123,7 +210,7 @@ public final class DropShelfManager: ObservableObject {
     }
 
     public func toggle(near point: NSPoint? = nil) {
-        DispatchQueue.main.async { [weak self] in
+        runOnMain { [weak self] in
             guard let self = self else { return }
             if self.isVisible {
                 self.dismiss()

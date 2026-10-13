@@ -83,6 +83,10 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
                 OverlayPanelManager.shared.hide()
             } else if lastLine == "shelf" {
                 DropShelfManager.shared.toggle()
+            } else if lastLine.hasPrefix("shelf-new-folder ") {
+                let filePath = String(lastLine.dropFirst("shelf-new-folder ".count)).trimmingCharacters(in: .whitespacesAndNewlines)
+                let url = URL(fileURLWithPath: filePath)
+                DropShelfManager.shared.addFiles([url], toFolderIndex: DropShelfManager.shared.folders.count)
             } else if lastLine.hasPrefix("shelf-add ") {
                 let filePath = String(lastLine.dropFirst("shelf-add ".count)).trimmingCharacters(in: .whitespacesAndNewlines)
                 let url = URL(fileURLWithPath: filePath)
